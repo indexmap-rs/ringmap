@@ -8,6 +8,7 @@
 //! However, we should probably not let this show in the public API or docs.
 
 mod entry;
+mod extract;
 
 pub mod raw_entry_v1;
 
@@ -25,6 +26,7 @@ type Indices = hash_table::HashTable<OffsetIndex>;
 type Entries<K, V> = VecDeque<Bucket<K, V>>;
 
 pub use entry::{Entry, IndexedEntry, OccupiedEntry, VacantEntry};
+pub(crate) use extract::ExtractCore;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct OffsetIndex {
@@ -231,6 +233,7 @@ impl<K, V> RingMapCore<K, V> {
 
     #[inline]
     pub(crate) fn len(&self) -> usize {
+        debug_assert_eq!(self.entries.len(), self.indices.len());
         self.indices.len()
     }
 
