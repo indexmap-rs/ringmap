@@ -240,7 +240,7 @@ quickcheck_limit! {
         let (odd, even): (Vec<_>, Vec<_>) = map.keys().copied().partition(|k| k % 2 == 1);
 
         let extracted: Vec<_> = map
-            .extract_if(|k, _| k % 2 == 1)
+            .extract_if(.., |k, _| k % 2 == 1)
             .map(|(k, _)| k)
             .collect();
 
@@ -262,7 +262,7 @@ quickcheck_limit! {
         });
 
         let extracted: Vec<_> = map
-            .extract_if(|k, _| k % 2 == 1)
+            .extract_if(.., |k, _| k % 2 == 1)
             .map(|(k, _)| k)
             .take(limit)
             .collect();

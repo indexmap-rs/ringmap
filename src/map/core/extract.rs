@@ -1,27 +1,35 @@
 #![allow(unsafe_code)]
 
 use super::{Bucket, RingMapCore};
+use crate::util::simplify_range;
 
 use alloc::vec::Vec;
 use core::mem;
+use core::ops::RangeBounds;
 
 impl<K, V> RingMapCore<K, V> {
-    pub(crate) fn extract(&mut self) -> ExtractCore<'_, K, V> {
+    pub(crate) fn extract<R>(&mut self, range: R) -> ExtractCore<'_, K, V>
+    where
+        R: RangeBounds<usize>,
+    {
+        let range = simplify_range(range, self.entries.len());
+
         // SAFETY: We must have consistent lengths to start, so that's a hard assertion.
-        // Then the worst `set_len(0)` can do is leak items if `ExtractCore` doesn't drop.
+        // Then the worst `set_len` can do is leak items if `ExtractCore` doesn't drop.
         assert_eq!(self.entries.len(), self.indices.len());
 
         // Steal the entries into a contiguous `Vec` so we *can* `set_len` etc.
         let mut entries: Vec<_> = mem::take(&mut self.entries).into();
 
         unsafe {
-            entries.set_len(0);
+            entries.set_len(range.start);
         }
         ExtractCore {
             map: self,
             entries,
-            current: 0,
-            new_len: 0,
+            new_len: range.start,
+            current: range.start,
+            end: range.end,
         }
     }
 }
@@ -29,15 +37,18 @@ impl<K, V> RingMapCore<K, V> {
 pub(crate) struct ExtractCore<'a, K, V> {
     map: &'a mut RingMapCore<K, V>,
     entries: Vec<Bucket<K, V>>,
-    current: usize,
     new_len: usize,
+    current: usize,
+    end: usize,
 }
 
 impl<K, V> Drop for ExtractCore<'_, K, V> {
     fn drop(&mut self) {
         let old_len = self.map.indices.len();
         let mut new_len = self.new_len;
+
         debug_assert!(new_len <= self.current);
+        debug_assert!(self.current <= self.end);
         debug_assert!(self.current <= old_len);
         debug_assert!(old_len <= self.entries.capacity());
 
@@ -74,13 +85,12 @@ impl<K, V> ExtractCore<'_, K, V> {
     where
         F: FnMut(&mut Bucket<K, V>) -> bool,
     {
-        let old_len = self.map.indices.len();
-        debug_assert!(old_len <= self.entries.capacity());
+        debug_assert!(self.end <= self.entries.capacity());
 
         let base = self.entries.as_mut_ptr();
-        while self.current < old_len {
+        while self.current < self.end {
             // SAFETY: We're maintaining both indices within bounds of the original entries, so
-            // 0..new_len and current..old_len are always valid items for our Drop to keep.
+            // 0..new_len and current..indices.len() are always valid items for our Drop to keep.
             unsafe {
                 let item = base.add(self.current);
                 if pred(&mut *item) {
@@ -103,6 +113,6 @@ impl<K, V> ExtractCore<'_, K, V> {
     }
 
     pub(crate) fn remaining(&self) -> usize {
-        self.map.indices.len() - self.current
+        self.end - self.current
     }
 }
