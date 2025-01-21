@@ -11,7 +11,7 @@ use core::hash::{BuildHasher, Hash};
 use core::marker::PhantomData;
 use core::{cmp, mem};
 
-use crate::{Bucket, IndexMap, IndexSet};
+use crate::{Bucket, RingMap, RingSet};
 
 /// Limit our preallocated capacity from a deserializer `size_hint()`.
 ///
@@ -29,7 +29,7 @@ pub(crate) fn cautious_capacity<K, V>(hint: Option<usize>) -> usize {
     )
 }
 
-impl<K, V, S> Serialize for IndexMap<K, V, S>
+impl<K, V, S> Serialize for RingMap<K, V, S>
 where
     K: Serialize,
     V: Serialize,
@@ -42,15 +42,15 @@ where
     }
 }
 
-struct IndexMapVisitor<K, V, S>(PhantomData<(K, V, S)>);
+struct RingMapVisitor<K, V, S>(PhantomData<(K, V, S)>);
 
-impl<'de, K, V, S> Visitor<'de> for IndexMapVisitor<K, V, S>
+impl<'de, K, V, S> Visitor<'de> for RingMapVisitor<K, V, S>
 where
     K: Deserialize<'de> + Eq + Hash,
     V: Deserialize<'de>,
     S: Default + BuildHasher,
 {
-    type Value = IndexMap<K, V, S>;
+    type Value = RingMap<K, V, S>;
 
     fn expecting(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(formatter, "a map")
@@ -61,7 +61,7 @@ where
         A: MapAccess<'de>,
     {
         let capacity = cautious_capacity::<K, V>(map.size_hint());
-        let mut values = IndexMap::with_capacity_and_hasher(capacity, S::default());
+        let mut values = RingMap::with_capacity_and_hasher(capacity, S::default());
 
         while let Some((key, value)) = map.next_entry()? {
             values.insert(key, value);
@@ -71,7 +71,7 @@ where
     }
 }
 
-impl<'de, K, V, S> Deserialize<'de> for IndexMap<K, V, S>
+impl<'de, K, V, S> Deserialize<'de> for RingMap<K, V, S>
 where
     K: Deserialize<'de> + Eq + Hash,
     V: Deserialize<'de>,
@@ -81,11 +81,11 @@ where
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_map(IndexMapVisitor(PhantomData))
+        deserializer.deserialize_map(RingMapVisitor(PhantomData))
     }
 }
 
-impl<'de, K, V, S, E> IntoDeserializer<'de, E> for IndexMap<K, V, S>
+impl<'de, K, V, S, E> IntoDeserializer<'de, E> for RingMap<K, V, S>
 where
     K: IntoDeserializer<'de, E> + Eq + Hash,
     V: IntoDeserializer<'de, E>,
@@ -99,7 +99,7 @@ where
     }
 }
 
-impl<T, S> Serialize for IndexSet<T, S>
+impl<T, S> Serialize for RingSet<T, S>
 where
     T: Serialize,
 {
@@ -111,14 +111,14 @@ where
     }
 }
 
-struct IndexSetVisitor<T, S>(PhantomData<(T, S)>);
+struct RingSetVisitor<T, S>(PhantomData<(T, S)>);
 
-impl<'de, T, S> Visitor<'de> for IndexSetVisitor<T, S>
+impl<'de, T, S> Visitor<'de> for RingSetVisitor<T, S>
 where
     T: Deserialize<'de> + Eq + Hash,
     S: Default + BuildHasher,
 {
-    type Value = IndexSet<T, S>;
+    type Value = RingSet<T, S>;
 
     fn expecting(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(formatter, "a set")
@@ -129,7 +129,7 @@ where
         A: SeqAccess<'de>,
     {
         let capacity = cautious_capacity::<T, ()>(seq.size_hint());
-        let mut values = IndexSet::with_capacity_and_hasher(capacity, S::default());
+        let mut values = RingSet::with_capacity_and_hasher(capacity, S::default());
 
         while let Some(value) = seq.next_element()? {
             values.insert(value);
@@ -139,7 +139,7 @@ where
     }
 }
 
-impl<'de, T, S> Deserialize<'de> for IndexSet<T, S>
+impl<'de, T, S> Deserialize<'de> for RingSet<T, S>
 where
     T: Deserialize<'de> + Eq + Hash,
     S: Default + BuildHasher,
@@ -148,11 +148,11 @@ where
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_seq(IndexSetVisitor(PhantomData))
+        deserializer.deserialize_seq(RingSetVisitor(PhantomData))
     }
 }
 
-impl<'de, T, S, E> IntoDeserializer<'de, E> for IndexSet<T, S>
+impl<'de, T, S, E> IntoDeserializer<'de, E> for RingSet<T, S>
 where
     T: IntoDeserializer<'de, E> + Eq + Hash,
     S: BuildHasher,

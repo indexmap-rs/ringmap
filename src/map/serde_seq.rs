@@ -1,19 +1,19 @@
-//! Functions to serialize and deserialize an [`IndexMap`] as an ordered sequence.
+//! Functions to serialize and deserialize an [`RingMap`] as an ordered sequence.
 //!
-//! The default `serde` implementation serializes `IndexMap` as a normal map,
+//! The default `serde` implementation serializes `RingMap` as a normal map,
 //! but there is no guarantee that serialization formats will preserve the order
-//! of the key-value pairs. This module serializes `IndexMap` as a sequence of
+//! of the key-value pairs. This module serializes `RingMap` as a sequence of
 //! `(key, value)` elements instead, in order.
 //!
 //! This module may be used in a field attribute for derived implementations:
 //!
 //! ```
-//! # use indexmap::IndexMap;
+//! # use ringmap::RingMap;
 //! # use serde_derive::{Deserialize, Serialize};
 //! #[derive(Deserialize, Serialize)]
 //! struct Data {
-//!     #[serde(with = "indexmap::map::serde_seq")]
-//!     map: IndexMap<i32, u64>,
+//!     #[serde(with = "ringmap::map::serde_seq")]
+//!     map: RingMap<i32, u64>,
 //!     // ...
 //! }
 //! ```
@@ -28,11 +28,11 @@ use core::marker::PhantomData;
 use crate::map::Slice as MapSlice;
 use crate::serde::cautious_capacity;
 use crate::set::Slice as SetSlice;
-use crate::IndexMap;
+use crate::RingMap;
 
 /// Serializes a [`map::Slice`][MapSlice] as an ordered sequence.
 ///
-/// This behaves like [`crate::map::serde_seq`] for `IndexMap`, serializing a sequence
+/// This behaves like [`crate::map::serde_seq`] for `RingMap`, serializing a sequence
 /// of `(key, value)` pairs, rather than as a map that might not preserve order.
 impl<K, V> Serialize for MapSlice<K, V>
 where
@@ -60,21 +60,21 @@ where
     }
 }
 
-/// Serializes an [`IndexMap`] as an ordered sequence.
+/// Serializes an [`RingMap`] as an ordered sequence.
 ///
 /// This function may be used in a field attribute for deriving [`Serialize`]:
 ///
 /// ```
-/// # use indexmap::IndexMap;
+/// # use ringmap::RingMap;
 /// # use serde_derive::Serialize;
 /// #[derive(Serialize)]
 /// struct Data {
-///     #[serde(serialize_with = "indexmap::map::serde_seq::serialize")]
-///     map: IndexMap<i32, u64>,
+///     #[serde(serialize_with = "ringmap::map::serde_seq::serialize")]
+///     map: RingMap<i32, u64>,
 ///     // ...
 /// }
 /// ```
-pub fn serialize<K, V, S, T>(map: &IndexMap<K, V, S>, serializer: T) -> Result<T::Ok, T::Error>
+pub fn serialize<K, V, S, T>(map: &RingMap<K, V, S>, serializer: T) -> Result<T::Ok, T::Error>
 where
     K: Serialize,
     V: Serialize,
@@ -83,7 +83,7 @@ where
     serializer.collect_seq(map)
 }
 
-/// Visitor to deserialize a *sequenced* `IndexMap`
+/// Visitor to deserialize a *sequenced* `RingMap`
 struct SeqVisitor<K, V, S>(PhantomData<(K, V, S)>);
 
 impl<'de, K, V, S> Visitor<'de> for SeqVisitor<K, V, S>
@@ -92,7 +92,7 @@ where
     V: Deserialize<'de>,
     S: Default + BuildHasher,
 {
-    type Value = IndexMap<K, V, S>;
+    type Value = RingMap<K, V, S>;
 
     fn expecting(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(formatter, "a sequenced map")
@@ -103,7 +103,7 @@ where
         A: SeqAccess<'de>,
     {
         let capacity = cautious_capacity::<K, V>(seq.size_hint());
-        let mut map = IndexMap::with_capacity_and_hasher(capacity, S::default());
+        let mut map = RingMap::with_capacity_and_hasher(capacity, S::default());
 
         while let Some((key, value)) = seq.next_element()? {
             map.insert(key, value);
@@ -113,21 +113,21 @@ where
     }
 }
 
-/// Deserializes an [`IndexMap`] from an ordered sequence.
+/// Deserializes an [`RingMap`] from an ordered sequence.
 ///
 /// This function may be used in a field attribute for deriving [`Deserialize`]:
 ///
 /// ```
-/// # use indexmap::IndexMap;
+/// # use ringmap::RingMap;
 /// # use serde_derive::Deserialize;
 /// #[derive(Deserialize)]
 /// struct Data {
-///     #[serde(deserialize_with = "indexmap::map::serde_seq::deserialize")]
-///     map: IndexMap<i32, u64>,
+///     #[serde(deserialize_with = "ringmap::map::serde_seq::deserialize")]
+///     map: RingMap<i32, u64>,
 ///     // ...
 /// }
 /// ```
-pub fn deserialize<'de, D, K, V, S>(deserializer: D) -> Result<IndexMap<K, V, S>, D::Error>
+pub fn deserialize<'de, D, K, V, S>(deserializer: D) -> Result<RingMap<K, V, S>, D::Error>
 where
     D: Deserializer<'de>,
     K: Deserialize<'de> + Eq + Hash,

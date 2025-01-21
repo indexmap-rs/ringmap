@@ -1,19 +1,19 @@
-use super::{Bucket, Entries, IndexSet, IntoIter, Iter};
+use super::{Bucket, IntoIter, Iter};
 use crate::util::try_simplify_range;
 
 use alloc::boxed::Box;
-use alloc::vec::Vec;
+use alloc::collections::VecDeque;
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{Hash, Hasher};
 use core::ops::{self, Bound, Index, RangeBounds};
 
-/// A dynamically-sized slice of values in an [`IndexSet`].
+/// A dynamically-sized slice of values in an [`RingSet`][super::RingSet].
 ///
 /// This supports indexed operations much like a `[T]` slice,
 /// but not any hashed operations on the values.
 ///
-/// Unlike `IndexSet`, `Slice` does consider the order for [`PartialEq`]
+/// Unlike `RingSet`, `Slice` does consider the order for [`PartialEq`]
 /// and [`Eq`], and it also implements [`PartialOrd`], [`Ord`], and [`Hash`].
 #[repr(transparent)]
 pub struct Slice<T> {
@@ -38,8 +38,8 @@ impl<T> Slice<T> {
 }
 
 impl<T> Slice<T> {
-    pub(crate) fn into_entries(self: Box<Self>) -> Vec<Bucket<T>> {
-        self.into_boxed().into_vec()
+    pub(crate) fn into_entries(self: Box<Self>) -> VecDeque<Bucket<T>> {
+        self.into_boxed().into_vec().into()
     }
 
     /// Returns an empty slice.
@@ -112,7 +112,7 @@ impl<T> Slice<T> {
 
     /// Return an iterator over the values of the set slice.
     pub fn iter(&self) -> Iter<'_, T> {
-        Iter::new(&self.entries)
+        Iter::from_slices((&self.entries, &[]))
     }
 
     /// Search over a sorted set for a value.
@@ -121,8 +121,8 @@ impl<T> Slice<T> {
     /// to maintain the sort. See [`slice::binary_search`] for more details.
     ///
     /// Computes in **O(log(n))** time, which is notably less scalable than looking the value up in
-    /// the set this is a slice from using [`IndexSet::get_index_of`], but this can also position
-    /// missing values.
+    /// the set this is a slice from using [`RingSet::get_index_of`][super::RingSet::get_index_of],
+    /// but this can also position missing values.
     pub fn binary_search(&self, x: &T) -> Result<usize, usize>
     where
         T: Ord,
@@ -263,14 +263,6 @@ impl<T> Index<usize> for Slice<T> {
 // Instead, we repeat the implementations for all the core range types.
 macro_rules! impl_index {
     ($($range:ty),*) => {$(
-        impl<T, S> Index<$range> for IndexSet<T, S> {
-            type Output = Slice<T>;
-
-            fn index(&self, range: $range) -> &Self::Output {
-                Slice::from_slice(&self.as_entries()[range])
-            }
-        }
-
         impl<T> Index<$range> for Slice<T> {
             type Output = Self;
 
@@ -293,20 +285,22 @@ impl_index!(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RingSet;
+    use alloc::vec::Vec;
 
     #[test]
     fn slice_index() {
-        fn check(vec_slice: &[i32], set_slice: &Slice<i32>, sub_slice: &Slice<i32>) {
-            assert_eq!(set_slice as *const _, sub_slice as *const _);
+        fn check(vec_slice: &[i32], set_slice: &Slice<i32>) {
             itertools::assert_equal(vec_slice, set_slice);
         }
 
         let vec: Vec<i32> = (0..10).map(|i| i * i).collect();
-        let set: IndexSet<i32> = vec.iter().cloned().collect();
-        let slice = set.as_slice();
+        let set: RingSet<i32> = vec.iter().cloned().collect();
+        let (slice, tail) = set.as_slices();
+        assert!(tail.is_empty());
 
         // RangeFull
-        check(&vec[..], &set[..], &slice[..]);
+        check(&vec[..], &slice[..]);
 
         for i in 0usize..10 {
             // Index
@@ -314,26 +308,26 @@ mod tests {
             assert_eq!(vec[i], slice[i]);
 
             // RangeFrom
-            check(&vec[i..], &set[i..], &slice[i..]);
+            check(&vec[i..], &slice[i..]);
 
             // RangeTo
-            check(&vec[..i], &set[..i], &slice[..i]);
+            check(&vec[..i], &slice[..i]);
 
             // RangeToInclusive
-            check(&vec[..=i], &set[..=i], &slice[..=i]);
+            check(&vec[..=i], &slice[..=i]);
 
             // (Bound<usize>, Bound<usize>)
             let bounds = (Bound::Excluded(i), Bound::Unbounded);
-            check(&vec[i + 1..], &set[bounds], &slice[bounds]);
+            check(&vec[i + 1..], &slice[bounds]);
 
             for j in i..=10 {
                 // Range
-                check(&vec[i..j], &set[i..j], &slice[i..j]);
+                check(&vec[i..j], &slice[i..j]);
             }
 
             for j in i..10 {
                 // RangeInclusive
-                check(&vec[i..=j], &set[i..=j], &slice[i..=j]);
+                check(&vec[i..=j], &slice[i..=j]);
             }
         }
     }

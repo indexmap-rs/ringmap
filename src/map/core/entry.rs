@@ -1,19 +1,24 @@
-use super::{equivalent, Entries, IndexMapCore, RefMut};
+use super::{equivalent, Entries, OffsetIndex, RefMut, RingMapCore};
 use crate::HashValue;
 use core::{fmt, mem};
 use hashbrown::hash_table;
 
-impl<K, V> IndexMapCore<K, V> {
+impl<K, V> RingMapCore<K, V> {
     pub(crate) fn entry(&mut self, hash: HashValue, key: K) -> Entry<'_, K, V>
     where
         K: Eq,
     {
         let entries = &mut self.entries;
-        let eq = equivalent(&key, entries);
+        let offset = &mut self.offset;
+        let eq = equivalent(&key, entries, *offset);
         match self.indices.find_entry(hash.get(), eq) {
-            Ok(index) => Entry::Occupied(OccupiedEntry { entries, index }),
+            Ok(index) => Entry::Occupied(OccupiedEntry {
+                entries,
+                index,
+                offset,
+            }),
             Err(absent) => Entry::Vacant(VacantEntry {
-                map: RefMut::new(absent.into_table(), entries),
+                map: RefMut::new(absent.into_table(), entries, offset),
                 hash,
                 key,
             }),
@@ -21,7 +26,7 @@ impl<K, V> IndexMapCore<K, V> {
     }
 }
 
-/// Entry for an existing key-value pair in an [`IndexMap`][crate::IndexMap]
+/// Entry for an existing key-value pair in an [`RingMap`][crate::RingMap]
 /// or a vacant location to insert one.
 pub enum Entry<'a, K, V> {
     /// Existing slot with equivalent key.
@@ -60,6 +65,28 @@ impl<'a, K, V> Entry<'a, K, V> {
         match self {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => entry.insert(default),
+        }
+    }
+
+    /// Appends the given default value in the entry if it is vacant and returns a mutable
+    /// reference to it. Otherwise a mutable reference to an already existent value is returned.
+    ///
+    /// Computes in **O(1)** time (amortized average).
+    pub fn or_push_back(self, default: V) -> &'a mut V {
+        match self {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.push_back(default),
+        }
+    }
+
+    /// Prepends the given default value in the entry if it is vacant and returns a mutable
+    /// reference to it. Otherwise a mutable reference to an already existent value is returned.
+    ///
+    /// Computes in **O(1)** time (amortized average).
+    pub fn or_push_front(self, default: V) -> &'a mut V {
+        match self {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.push_front(default),
         }
     }
 
@@ -141,30 +168,36 @@ impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for Entry<'_, K, V> {
     }
 }
 
-/// A view into an occupied entry in an [`IndexMap`][crate::IndexMap].
+/// A view into an occupied entry in an [`RingMap`][crate::RingMap].
 /// It is part of the [`Entry`] enum.
 pub struct OccupiedEntry<'a, K, V> {
     entries: &'a mut Entries<K, V>,
-    index: hash_table::OccupiedEntry<'a, usize>,
+    offset: &'a mut usize,
+    index: hash_table::OccupiedEntry<'a, OffsetIndex>,
 }
 
 impl<'a, K, V> OccupiedEntry<'a, K, V> {
-    pub(crate) fn new(
+    pub(super) fn new(
         entries: &'a mut Entries<K, V>,
-        index: hash_table::OccupiedEntry<'a, usize>,
+        offset: &'a mut usize,
+        index: hash_table::OccupiedEntry<'a, OffsetIndex>,
     ) -> Self {
-        Self { entries, index }
+        Self {
+            entries,
+            offset,
+            index,
+        }
     }
 
     /// Return the index of the key-value pair
     #[inline]
     pub fn index(&self) -> usize {
-        *self.index.get()
+        self.index.get().get(*self.offset)
     }
 
     #[inline]
     fn into_ref_mut(self) -> RefMut<'a, K, V> {
-        RefMut::new(self.index.into_table(), self.entries)
+        RefMut::new(self.index.into_table(), self.entries, self.offset)
     }
 
     /// Gets a reference to the entry's key in the map.
@@ -214,78 +247,80 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
 
     /// Remove the key, value pair stored in the map for this entry, and return the value.
     ///
-    /// **NOTE:** This is equivalent to [`.swap_remove()`][Self::swap_remove], replacing this
-    /// entry's position with the last element, and it is deprecated in favor of calling that
-    /// explicitly. If you need to preserve the relative order of the keys in the map, use
-    /// [`.shift_remove()`][Self::shift_remove] instead.
-    #[deprecated(note = "`remove` disrupts the map order -- \
-        use `swap_remove` or `shift_remove` for explicit behavior.")]
+    /// Like [`VecDeque::remove`][super::VecDeque::remove], the pair is removed by shifting all of
+    /// the elements either before or after it, preserving their relative order.
+    /// **This perturbs the index of all of the following elements!**
+    ///
+    /// Computes in **O(n)** time (average).
     pub fn remove(self) -> V {
-        self.swap_remove()
-    }
-
-    /// Remove the key, value pair stored in the map for this entry, and return the value.
-    ///
-    /// Like [`Vec::swap_remove`][crate::Vec::swap_remove], the pair is removed by swapping it with
-    /// the last element of the map and popping it off.
-    /// **This perturbs the position of what used to be the last element!**
-    ///
-    /// Computes in **O(1)** time (average).
-    pub fn swap_remove(self) -> V {
-        self.swap_remove_entry().1
-    }
-
-    /// Remove the key, value pair stored in the map for this entry, and return the value.
-    ///
-    /// Like [`Vec::remove`][crate::Vec::remove], the pair is removed by shifting all of the
-    /// elements that follow it, preserving their relative order.
-    /// **This perturbs the index of all of those elements!**
-    ///
-    /// Computes in **O(n)** time (average).
-    pub fn shift_remove(self) -> V {
-        self.shift_remove_entry().1
+        self.remove_entry().1
     }
 
     /// Remove and return the key, value pair stored in the map for this entry
     ///
-    /// **NOTE:** This is equivalent to [`.swap_remove_entry()`][Self::swap_remove_entry],
-    /// replacing this entry's position with the last element, and it is deprecated in favor of
-    /// calling that explicitly. If you need to preserve the relative order of the keys in the map,
-    /// use [`.shift_remove_entry()`][Self::shift_remove_entry] instead.
-    #[deprecated(note = "`remove_entry` disrupts the map order -- \
-        use `swap_remove_entry` or `shift_remove_entry` for explicit behavior.")]
+    /// Like [`VecDeque::remove`][super::VecDeque::remove], the pair is removed by shifting all of
+    /// the elements either before or after it, preserving their relative order.
+    /// **This perturbs the index of all of the following elements!**
+    ///
+    /// Computes in **O(n)** time (average).
     pub fn remove_entry(self) -> (K, V) {
-        self.swap_remove_entry()
+        let (index, entry) = self.index.remove();
+        let index = index.get(*self.offset);
+        RefMut::new(entry.into_table(), self.entries, self.offset).shift_remove_finish(index)
     }
 
-    /// Remove and return the key, value pair stored in the map for this entry
+    /// Remove the key, value pair stored in the map for this entry, and return the value.
     ///
-    /// Like [`Vec::swap_remove`][crate::Vec::swap_remove], the pair is removed by swapping it with
-    /// the last element of the map and popping it off.
+    /// Like [`VecDeque::swap_remove_back`][super::VecDeque::swap_remove_back], the pair is removed
+    /// by swapping it with the last element of the map and popping it off.
     /// **This perturbs the position of what used to be the last element!**
     ///
     /// Computes in **O(1)** time (average).
-    pub fn swap_remove_entry(self) -> (K, V) {
-        let (index, entry) = self.index.remove();
-        RefMut::new(entry.into_table(), self.entries).swap_remove_finish(index)
+    pub fn swap_remove_back(self) -> V {
+        self.swap_remove_back_entry().1
     }
 
     /// Remove and return the key, value pair stored in the map for this entry
     ///
-    /// Like [`Vec::remove`][crate::Vec::remove], the pair is removed by shifting all of the
-    /// elements that follow it, preserving their relative order.
-    /// **This perturbs the index of all of those elements!**
+    /// Like [`VecDeque::swap_remove_back`][super::VecDeque::swap_remove_back], the pair is removed
+    /// by swapping it with the last element of the map and popping it off.
+    /// **This perturbs the position of what used to be the last element!**
     ///
-    /// Computes in **O(n)** time (average).
-    pub fn shift_remove_entry(self) -> (K, V) {
+    /// Computes in **O(1)** time (average).
+    pub fn swap_remove_back_entry(self) -> (K, V) {
         let (index, entry) = self.index.remove();
-        RefMut::new(entry.into_table(), self.entries).shift_remove_finish(index)
+        let index = index.get(*self.offset);
+        RefMut::new(entry.into_table(), self.entries, self.offset).swap_remove_back_finish(index)
+    }
+
+    /// Remove the key, value pair stored in the map for this entry, and return the value.
+    ///
+    /// Like [`VecDeque::swap_remove_front`][super::VecDeque::swap_remove_front], the pair is removed
+    /// by swapping it with the front element of the map and popping it off.
+    /// **This perturbs the position of what used to be the front element!**
+    ///
+    /// Computes in **O(1)** time (average).
+    pub fn swap_remove_front(self) -> V {
+        self.swap_remove_front_entry().1
+    }
+
+    /// Remove and return the key, value pair stored in the map for this entry
+    ///
+    /// Like [`VecDeque::swap_remove_front`][super::VecDeque::swap_remove_front], the pair is removed
+    /// by swapping it with the front element of the map and popping it off.
+    /// **This perturbs the position of what used to be the front element!**
+    ///
+    /// Computes in **O(1)** time (average).
+    pub fn swap_remove_front_entry(self) -> (K, V) {
+        let (index, entry) = self.index.remove();
+        let index = index.get(*self.offset);
+        RefMut::new(entry.into_table(), self.entries, self.offset).swap_remove_front_finish(index)
     }
 
     /// Moves the position of the entry to a new index
     /// by shifting all other entries in-between.
     ///
-    /// This is equivalent to [`IndexMap::move_index`][`crate::IndexMap::move_index`]
+    /// This is equivalent to [`RingMap::move_index`][`crate::RingMap::move_index`]
     /// coming `from` the current [`.index()`][Self::index].
     ///
     /// * If `self.index() < to`, the other pairs will shift down while the targeted pair moves up.
@@ -302,7 +337,7 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
 
     /// Swaps the position of entry with another.
     ///
-    /// This is equivalent to [`IndexMap::swap_indices`][`crate::IndexMap::swap_indices`]
+    /// This is equivalent to [`RingMap::swap_indices`][`crate::RingMap::swap_indices`]
     /// with the current [`.index()`][Self::index] as one of the two being swapped.
     ///
     /// ***Panics*** if the `other` index is out of bounds.
@@ -326,20 +361,27 @@ impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for OccupiedEntry<'_, K, V> {
 impl<'a, K, V> From<IndexedEntry<'a, K, V>> for OccupiedEntry<'a, K, V> {
     fn from(other: IndexedEntry<'a, K, V>) -> Self {
         let IndexedEntry {
-            map: RefMut { indices, entries },
+            map:
+                RefMut {
+                    indices,
+                    entries,
+                    offset,
+                },
             index,
         } = other;
         let hash = entries[index].hash;
+        let needle = OffsetIndex::new(index, *offset);
         Self {
             entries,
+            offset,
             index: indices
-                .find_entry(hash.get(), move |&i| i == index)
+                .find_entry(hash.get(), move |&i| i == needle)
                 .expect("index not found"),
         }
     }
 }
 
-/// A view into a vacant entry in an [`IndexMap`][crate::IndexMap].
+/// A view into a vacant entry in an [`RingMap`][crate::RingMap].
 /// It is part of the [`Entry`] enum.
 pub struct VacantEntry<'a, K, V> {
     map: RefMut<'a, K, V>,
@@ -367,20 +409,34 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
         self.key
     }
 
-    /// Inserts the entry's key and the given value into the map, and returns a mutable reference
-    /// to the value.
-    ///
-    /// Computes in **O(1)** time (amortized average).
+    /// Inserts the entry's key and the given value into the map,
+    /// and returns a mutable reference to the value.
     pub fn insert(self, value: V) -> &'a mut V {
-        self.insert_entry(value).into_mut()
+        // this is now redundant...
+        self.push_back(value)
     }
 
     /// Inserts the entry's key and the given value into the map, and returns an `OccupiedEntry`.
     ///
     /// Computes in **O(1)** time (amortized average).
     pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
-        let Self { map, hash, key } = self;
-        map.insert_unique(hash, key, value)
+        self.map.push_back_unique(self.hash, self.key, value)
+    }
+
+    /// Prepends the entry's key and the given value onto the map,
+    /// and returns a mutable reference to the value.
+    pub fn push_front(self, value: V) -> &'a mut V {
+        self.map
+            .push_front_unique(self.hash, self.key, value)
+            .into_mut()
+    }
+
+    /// Appends the entry's key and the given value onto the map,
+    /// and returns a mutable reference to the value.
+    pub fn push_back(self, value: V) -> &'a mut V {
+        self.map
+            .push_back_unique(self.hash, self.key, value)
+            .into_mut()
     }
 
     /// Inserts the entry's key and the given value into the map at its ordered
@@ -396,8 +452,7 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
     where
         K: Ord,
     {
-        let slice = crate::map::Slice::from_slice(self.map.entries);
-        let i = slice.binary_search_keys(&self.key).unwrap_err();
+        let i = self.map.binary_search_keys(&self.key).unwrap_err();
         (i, self.shift_insert(i, value))
     }
 
@@ -420,9 +475,9 @@ impl<K: fmt::Debug, V> fmt::Debug for VacantEntry<'_, K, V> {
     }
 }
 
-/// A view into an occupied entry in an [`IndexMap`][crate::IndexMap] obtained by index.
+/// A view into an occupied entry in an [`RingMap`][crate::RingMap] obtained by index.
 ///
-/// This `struct` is created from the [`get_index_entry`][crate::IndexMap::get_index_entry] method.
+/// This `struct` is created from the [`get_index_entry`][crate::RingMap::get_index_entry] method.
 pub struct IndexedEntry<'a, K, V> {
     map: RefMut<'a, K, V>,
     // We have a mutable reference to the map, which keeps the index
@@ -431,7 +486,7 @@ pub struct IndexedEntry<'a, K, V> {
 }
 
 impl<'a, K, V> IndexedEntry<'a, K, V> {
-    pub(crate) fn new(map: &'a mut IndexMapCore<K, V>, index: usize) -> Self {
+    pub(crate) fn new(map: &'a mut RingMapCore<K, V>, index: usize) -> Self {
         Self {
             map: map.borrow_mut(),
             index,
@@ -479,52 +534,74 @@ impl<'a, K, V> IndexedEntry<'a, K, V> {
 
     /// Remove and return the key, value pair stored in the map for this entry
     ///
-    /// Like [`Vec::swap_remove`][crate::Vec::swap_remove], the pair is removed by swapping it with
-    /// the last element of the map and popping it off.
-    /// **This perturbs the position of what used to be the last element!**
-    ///
-    /// Computes in **O(1)** time (average).
-    pub fn swap_remove_entry(mut self) -> (K, V) {
-        self.map.swap_remove_index(self.index).unwrap()
-    }
-
-    /// Remove and return the key, value pair stored in the map for this entry
-    ///
-    /// Like [`Vec::remove`][crate::Vec::remove], the pair is removed by shifting all of the
-    /// elements that follow it, preserving their relative order.
-    /// **This perturbs the index of all of those elements!**
+    /// Like [`VecDeque::remove`][super::VecDeque::remove], the pair is removed by shifting all of the
+    /// elements either before or after it, preserving their relative order.
+    /// **This perturbs the index of all of the following elements!**
     ///
     /// Computes in **O(n)** time (average).
-    pub fn shift_remove_entry(mut self) -> (K, V) {
+    pub fn remove_entry(mut self) -> (K, V) {
         self.map.shift_remove_index(self.index).unwrap()
     }
 
     /// Remove the key, value pair stored in the map for this entry, and return the value.
     ///
-    /// Like [`Vec::swap_remove`][crate::Vec::swap_remove], the pair is removed by swapping it with
-    /// the last element of the map and popping it off.
+    /// Like [`VecDeque::remove`][super::VecDeque::remove], the pair is removed by shifting all of the
+    /// elements either before or after it, preserving their relative order.
+    /// **This perturbs the index of all of the following elements!**
+    ///
+    /// Computes in **O(n)** time (average).
+    pub fn remove(self) -> V {
+        self.remove_entry().1
+    }
+
+    /// Remove and return the key, value pair stored in the map for this entry
+    ///
+    /// Like [`VecDeque::swap_remove_back`][super::VecDeque::swap_remove_back], the pair is removed
+    /// by swapping it with the last element of the map and popping it off.
     /// **This perturbs the position of what used to be the last element!**
     ///
     /// Computes in **O(1)** time (average).
-    pub fn swap_remove(self) -> V {
-        self.swap_remove_entry().1
+    pub fn swap_remove_back_entry(mut self) -> (K, V) {
+        self.map.swap_remove_back_index(self.index).unwrap()
     }
 
     /// Remove the key, value pair stored in the map for this entry, and return the value.
     ///
-    /// Like [`Vec::remove`][crate::Vec::remove], the pair is removed by shifting all of the
-    /// elements that follow it, preserving their relative order.
-    /// **This perturbs the index of all of those elements!**
+    /// Like [`VecDeque::swap_remove_back`][super::VecDeque::swap_remove_back], the pair is removed
+    /// by swapping it with the last element of the map and popping it off.
+    /// **This perturbs the position of what used to be the last element!**
     ///
-    /// Computes in **O(n)** time (average).
-    pub fn shift_remove(self) -> V {
-        self.shift_remove_entry().1
+    /// Computes in **O(1)** time (average).
+    pub fn swap_remove_back(self) -> V {
+        self.swap_remove_back_entry().1
+    }
+
+    /// Remove and return the key, value pair stored in the map for this entry
+    ///
+    /// Like [`VecDeque::swap_remove_front`][super::VecDeque::swap_remove_front], the pair is removed
+    /// by swapping it with the front element of the map and popping it off.
+    /// **This perturbs the position of what used to be the front element!**
+    ///
+    /// Computes in **O(1)** time (average).
+    pub fn swap_remove_front_entry(mut self) -> (K, V) {
+        self.map.swap_remove_front_index(self.index).unwrap()
+    }
+
+    /// Remove the key, value pair stored in the map for this entry, and return the value.
+    ///
+    /// Like [`VecDeque::swap_remove_front`][super::VecDeque::swap_remove_front], the pair is removed
+    /// by swapping it with the front element of the map and popping it off.
+    /// **This perturbs the position of what used to be the front element!**
+    ///
+    /// Computes in **O(1)** time (average).
+    pub fn swap_remove_front(self) -> V {
+        self.swap_remove_front_entry().1
     }
 
     /// Moves the position of the entry to a new index
     /// by shifting all other entries in-between.
     ///
-    /// This is equivalent to [`IndexMap::move_index`][`crate::IndexMap::move_index`]
+    /// This is equivalent to [`RingMap::move_index`][`crate::RingMap::move_index`]
     /// coming `from` the current [`.index()`][Self::index].
     ///
     /// * If `self.index() < to`, the other pairs will shift down while the targeted pair moves up.
@@ -540,7 +617,7 @@ impl<'a, K, V> IndexedEntry<'a, K, V> {
 
     /// Swaps the position of entry with another.
     ///
-    /// This is equivalent to [`IndexMap::swap_indices`][`crate::IndexMap::swap_indices`]
+    /// This is equivalent to [`RingMap::swap_indices`][`crate::RingMap::swap_indices`]
     /// with the current [`.index()`][Self::index] as one of the two being swapped.
     ///
     /// ***Panics*** if the `other` index is out of bounds.

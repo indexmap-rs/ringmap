@@ -1,4 +1,4 @@
-//! A hash set implemented using [`IndexMap`]
+//! A hash set implemented using [`RingMap`]
 
 mod iter;
 mod mutable;
@@ -20,15 +20,15 @@ use crate::TryReserveError;
 #[cfg(feature = "std")]
 use std::collections::hash_map::RandomState;
 
-use crate::util::try_simplify_range;
 use alloc::boxed::Box;
+use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 use core::fmt;
-use core::hash::{BuildHasher, Hash};
+use core::hash::{BuildHasher, Hash, Hasher};
 use core::ops::{BitAnd, BitOr, BitXor, Index, RangeBounds, Sub};
 
-use super::{Entries, Equivalent, IndexMap};
+use super::{Entries, Equivalent, RingMap};
 
 type Bucket<T> = super::Bucket<T, ()>;
 
@@ -48,11 +48,11 @@ type Bucket<T> = super::Bucket<T, ()>;
 /// already present.
 ///
 /// All iterators traverse the set *in order*.  Set operation iterators like
-/// [`IndexSet::union`] produce a concatenated order, as do their matching "bitwise"
+/// [`RingSet::union`] produce a concatenated order, as do their matching "bitwise"
 /// operators.  See their documentation for specifics.
 ///
 /// The insertion order is preserved, with **notable exceptions** like the
-/// [`.remove()`][Self::remove] or [`.swap_remove()`][Self::swap_remove] methods.
+/// [`.swap_remove_front()`][Self::swap_remove_front] or [`.swap_remove_back()`][Self::swap_remove_back] methods.
 /// Methods such as [`.sort_by()`][Self::sort_by] of
 /// course result in a new order, depending on the sorting order.
 ///
@@ -64,16 +64,16 @@ type Bucket<T> = super::Bucket<T, ()>;
 ///
 /// # Complexity
 ///
-/// Internally, `IndexSet<T, S>` just holds an [`IndexMap<T, (), S>`](IndexMap). Thus the complexity
+/// Internally, `RingSet<T, S>` just holds an [`RingMap<T, (), S>`](RingMap). Thus the complexity
 /// of the two are the same for most methods.
 ///
 /// # Examples
 ///
 /// ```
-/// use indexmap::IndexSet;
+/// use ringmap::RingSet;
 ///
 /// // Collects which letters appear in a sentence.
-/// let letters: IndexSet<_> = "a short treatise on fungi".chars().collect();
+/// let letters: RingSet<_> = "a short treatise on fungi".chars().collect();
 ///
 /// assert!(letters.contains(&'s'));
 /// assert!(letters.contains(&'t'));
@@ -81,21 +81,21 @@ type Bucket<T> = super::Bucket<T, ()>;
 /// assert!(!letters.contains(&'y'));
 /// ```
 #[cfg(feature = "std")]
-pub struct IndexSet<T, S = RandomState> {
-    pub(crate) map: IndexMap<T, (), S>,
+pub struct RingSet<T, S = RandomState> {
+    pub(crate) map: RingMap<T, (), S>,
 }
 #[cfg(not(feature = "std"))]
-pub struct IndexSet<T, S> {
-    pub(crate) map: IndexMap<T, (), S>,
+pub struct RingSet<T, S> {
+    pub(crate) map: RingMap<T, (), S>,
 }
 
-impl<T, S> Clone for IndexSet<T, S>
+impl<T, S> Clone for RingSet<T, S>
 where
     T: Clone,
     S: Clone,
 {
     fn clone(&self) -> Self {
-        IndexSet {
+        RingSet {
             map: self.map.clone(),
         }
     }
@@ -105,33 +105,33 @@ where
     }
 }
 
-impl<T, S> Entries for IndexSet<T, S> {
+impl<T, S> Entries for RingSet<T, S> {
     type Entry = Bucket<T>;
 
     #[inline]
-    fn into_entries(self) -> Vec<Self::Entry> {
+    fn into_entries(self) -> VecDeque<Self::Entry> {
         self.map.into_entries()
     }
 
     #[inline]
-    fn as_entries(&self) -> &[Self::Entry] {
+    fn as_entries(&self) -> &VecDeque<Self::Entry> {
         self.map.as_entries()
     }
 
     #[inline]
-    fn as_entries_mut(&mut self) -> &mut [Self::Entry] {
+    fn as_entries_mut(&mut self) -> &mut VecDeque<Self::Entry> {
         self.map.as_entries_mut()
     }
 
-    fn with_entries<F>(&mut self, f: F)
+    fn with_contiguous_entries<F>(&mut self, f: F)
     where
         F: FnOnce(&mut [Self::Entry]),
     {
-        self.map.with_entries(f);
+        self.map.with_contiguous_entries(f);
     }
 }
 
-impl<T, S> fmt::Debug for IndexSet<T, S>
+impl<T, S> fmt::Debug for RingSet<T, S>
 where
     T: fmt::Debug,
 {
@@ -142,18 +142,18 @@ where
 
     #[cfg(feature = "test_debug")]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Let the inner `IndexMap` print all of its details
-        f.debug_struct("IndexSet").field("map", &self.map).finish()
+        // Let the inner `RingSet` print all of its details
+        f.debug_struct("RingSet").field("map", &self.map).finish()
     }
 }
 
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
-impl<T> IndexSet<T> {
+impl<T> RingSet<T> {
     /// Create a new set. (Does not allocate.)
     pub fn new() -> Self {
-        IndexSet {
-            map: IndexMap::new(),
+        RingSet {
+            map: RingMap::new(),
         }
     }
 
@@ -162,20 +162,20 @@ impl<T> IndexSet<T> {
     ///
     /// Computes in **O(n)** time.
     pub fn with_capacity(n: usize) -> Self {
-        IndexSet {
-            map: IndexMap::with_capacity(n),
+        RingSet {
+            map: RingMap::with_capacity(n),
         }
     }
 }
 
-impl<T, S> IndexSet<T, S> {
+impl<T, S> RingSet<T, S> {
     /// Create a new set with capacity for `n` elements.
     /// (Does not allocate if `n` is zero.)
     ///
     /// Computes in **O(n)** time.
     pub fn with_capacity_and_hasher(n: usize, hash_builder: S) -> Self {
-        IndexSet {
-            map: IndexMap::with_capacity_and_hasher(n, hash_builder),
+        RingSet {
+            map: RingMap::with_capacity_and_hasher(n, hash_builder),
         }
     }
 
@@ -184,8 +184,8 @@ impl<T, S> IndexSet<T, S> {
     /// This function is `const`, so it
     /// can be called in `static` contexts.
     pub const fn with_hasher(hash_builder: S) -> Self {
-        IndexSet {
-            map: IndexMap::with_hasher(hash_builder),
+        RingSet {
+            map: RingMap::with_hasher(hash_builder),
         }
     }
 
@@ -237,7 +237,7 @@ impl<T, S> IndexSet<T, S> {
         self.map.truncate(len);
     }
 
-    /// Clears the `IndexSet` in the given index range, returning those values
+    /// Clears the `RingSet` in the given index range, returning those values
     /// as a drain iterator.
     ///
     /// The range may be any type that implements [`RangeBounds<usize>`],
@@ -328,7 +328,7 @@ impl<T, S> IndexSet<T, S> {
     }
 }
 
-impl<T, S> IndexSet<T, S>
+impl<T, S> RingSet<T, S>
 where
     T: Hash + Eq,
     S: BuildHasher,
@@ -356,6 +356,34 @@ where
     /// Computes in **O(1)** time (amortized average).
     pub fn insert_full(&mut self, value: T) -> (usize, bool) {
         let (index, existing) = self.map.insert_full(value, ());
+        (index, existing.is_none())
+    }
+
+    /// Appends the value into the set, and get its index.
+    ///
+    /// If an equivalent item already exists in the set, it returns
+    /// the index of the existing item and `false`, leaving the
+    /// original value in the set and without altering its insertion
+    /// order. Otherwise, it inserts the new item at the back and
+    /// returns the index of the inserted item and `true`.
+    ///
+    /// Computes in **O(1)** time (amortized average).
+    pub fn push_back(&mut self, value: T) -> (usize, bool) {
+        let (index, existing) = self.map.push_back(value, ());
+        (index, existing.is_none())
+    }
+
+    /// Prepends the value into the set, and get its index.
+    ///
+    /// If an equivalent item already exists in the set, it returns
+    /// the index of the existing item and `false`, leaving the
+    /// original value in the set and without altering its insertion
+    /// order. Otherwise, it inserts the new item at the front and
+    /// returns the index of the inserted item and `true`.
+    ///
+    /// Computes in **O(1)** time (amortized average).
+    pub fn push_front(&mut self, value: T) -> (usize, bool) {
+        let (index, existing) = self.map.push_front(value, ());
         (index, existing.is_none())
     }
 
@@ -402,8 +430,8 @@ where
     /// # Examples
     ///
     /// ```
-    /// use indexmap::IndexSet;
-    /// let mut set: IndexSet<char> = ('a'..='z').collect();
+    /// use ringmap::RingSet;
+    /// let mut set: RingSet<char> = ('a'..='z').collect();
     ///
     /// // The new value '*' goes exactly at the given index.
     /// assert_eq!(set.get_index_of(&'*'), None);
@@ -452,8 +480,8 @@ where
     /// # Examples
     ///
     /// ```
-    /// use indexmap::IndexSet;
-    /// let mut set: IndexSet<char> = ('a'..='z').collect();
+    /// use ringmap::RingSet;
+    /// let mut set: RingSet<char> = ('a'..='z').collect();
     ///
     /// // The new value '*' goes exactly at the given index.
     /// assert_eq!(set.get_index_of(&'*'), None);
@@ -480,8 +508,8 @@ where
     /// ```
     ///
     /// ```should_panic
-    /// use indexmap::IndexSet;
-    /// let mut set: IndexSet<char> = ('a'..='z').collect();
+    /// use ringmap::RingSet;
+    /// let mut set: RingSet<char> = ('a'..='z').collect();
     ///
     /// // This is an invalid index for moving an existing value!
     /// set.shift_insert(set.len(), 'a');
@@ -516,7 +544,7 @@ where
     /// Return an iterator over the values that are in `self` but not `other`.
     ///
     /// Values are produced in the same order that they appear in `self`.
-    pub fn difference<'a, S2>(&'a self, other: &'a IndexSet<T, S2>) -> Difference<'a, T, S2>
+    pub fn difference<'a, S2>(&'a self, other: &'a RingSet<T, S2>) -> Difference<'a, T, S2>
     where
         S2: BuildHasher,
     {
@@ -530,7 +558,7 @@ where
     /// values from `other` in their original order.
     pub fn symmetric_difference<'a, S2>(
         &'a self,
-        other: &'a IndexSet<T, S2>,
+        other: &'a RingSet<T, S2>,
     ) -> SymmetricDifference<'a, T, S, S2>
     where
         S2: BuildHasher,
@@ -541,7 +569,7 @@ where
     /// Return an iterator over the values that are in both `self` and `other`.
     ///
     /// Values are produced in the same order that they appear in `self`.
-    pub fn intersection<'a, S2>(&'a self, other: &'a IndexSet<T, S2>) -> Intersection<'a, T, S2>
+    pub fn intersection<'a, S2>(&'a self, other: &'a RingSet<T, S2>) -> Intersection<'a, T, S2>
     where
         S2: BuildHasher,
     {
@@ -552,7 +580,7 @@ where
     ///
     /// Values from `self` are produced in their original order, followed by
     /// values that are unique to `other` in their original order.
-    pub fn union<'a, S2>(&'a self, other: &'a IndexSet<T, S2>) -> Union<'a, T, S>
+    pub fn union<'a, S2>(&'a self, other: &'a RingSet<T, S2>) -> Union<'a, T, S>
     where
         S2: BuildHasher,
     {
@@ -578,9 +606,9 @@ where
     /// # Examples
     ///
     /// ```
-    /// use indexmap::IndexSet;
+    /// use ringmap::RingSet;
     ///
-    /// let mut set = IndexSet::from([0, 1, 2, 3, 4]);
+    /// let mut set = RingSet::from([0, 1, 2, 3, 4]);
     /// let new = [5, 4, 3, 2, 1];
     /// let removed: Vec<_> = set.splice(2..4, new).collect();
     ///
@@ -609,10 +637,10 @@ where
     /// # Examples
     ///
     /// ```
-    /// use indexmap::IndexSet;
+    /// use ringmap::RingSet;
     ///
-    /// let mut a = IndexSet::from([3, 2, 1]);
-    /// let mut b = IndexSet::from([3, 4, 5]);
+    /// let mut a = RingSet::from([3, 2, 1]);
+    /// let mut b = RingSet::from([3, 4, 5]);
     /// let old_capacity = b.capacity();
     ///
     /// a.append(&mut b);
@@ -623,12 +651,12 @@ where
     ///
     /// assert!(a.iter().eq(&[3, 2, 1, 4, 5]));
     /// ```
-    pub fn append<S2>(&mut self, other: &mut IndexSet<T, S2>) {
+    pub fn append<S2>(&mut self, other: &mut RingSet<T, S2>) {
         self.map.append(&mut other.map);
     }
 }
 
-impl<T, S> IndexSet<T, S>
+impl<T, S> RingSet<T, S>
 where
     S: BuildHasher,
 {
@@ -673,139 +701,169 @@ where
 
     /// Remove the value from the set, and return `true` if it was present.
     ///
-    /// **NOTE:** This is equivalent to [`.swap_remove(value)`][Self::swap_remove], replacing this
-    /// value's position with the last element, and it is deprecated in favor of calling that
-    /// explicitly. If you need to preserve the relative order of the values in the set, use
-    /// [`.shift_remove(value)`][Self::shift_remove] instead.
-    #[deprecated(note = "`remove` disrupts the set order -- \
-        use `swap_remove` or `shift_remove` for explicit behavior.")]
+    /// Like [`VecDeque::remove`], the value is removed by shifting all of the
+    /// elements either before or after it, preserving their relative order.
+    /// **This perturbs the index of all of the following elements!**
+    ///
+    /// Return `false` if `value` was not in the set.
+    ///
+    /// Computes in **O(n)** time (average).
     pub fn remove<Q>(&mut self, value: &Q) -> bool
     where
         Q: ?Sized + Hash + Equivalent<T>,
     {
-        self.swap_remove(value)
-    }
-
-    /// Remove the value from the set, and return `true` if it was present.
-    ///
-    /// Like [`Vec::swap_remove`], the value is removed by swapping it with the
-    /// last element of the set and popping it off. **This perturbs
-    /// the position of what used to be the last element!**
-    ///
-    /// Return `false` if `value` was not in the set.
-    ///
-    /// Computes in **O(1)** time (average).
-    pub fn swap_remove<Q>(&mut self, value: &Q) -> bool
-    where
-        Q: ?Sized + Hash + Equivalent<T>,
-    {
-        self.map.swap_remove(value).is_some()
-    }
-
-    /// Remove the value from the set, and return `true` if it was present.
-    ///
-    /// Like [`Vec::remove`], the value is removed by shifting all of the
-    /// elements that follow it, preserving their relative order.
-    /// **This perturbs the index of all of those elements!**
-    ///
-    /// Return `false` if `value` was not in the set.
-    ///
-    /// Computes in **O(n)** time (average).
-    pub fn shift_remove<Q>(&mut self, value: &Q) -> bool
-    where
-        Q: ?Sized + Hash + Equivalent<T>,
-    {
-        self.map.shift_remove(value).is_some()
+        self.map.remove(value).is_some()
     }
 
     /// Removes and returns the value in the set, if any, that is equal to the
     /// given one.
     ///
-    /// **NOTE:** This is equivalent to [`.swap_take(value)`][Self::swap_take], replacing this
-    /// value's position with the last element, and it is deprecated in favor of calling that
-    /// explicitly. If you need to preserve the relative order of the values in the set, use
-    /// [`.shift_take(value)`][Self::shift_take] instead.
-    #[deprecated(note = "`take` disrupts the set order -- \
-        use `swap_take` or `shift_take` for explicit behavior.")]
+    /// Like [`VecDeque::remove`], the value is removed by shifting all of the
+    /// elements either before or after it, preserving their relative order.
+    /// **This perturbs the index of all of the following elements!**
+    ///
+    /// Return `None` if `value` was not in the set.
+    ///
+    /// Computes in **O(n)** time (average).
     pub fn take<Q>(&mut self, value: &Q) -> Option<T>
     where
         Q: ?Sized + Hash + Equivalent<T>,
     {
-        self.swap_take(value)
+        self.map.remove_entry(value).map(|(x, ())| x)
+    }
+
+    /// Remove the value from the set return it and the index it had.
+    ///
+    /// Like [`VecDeque::remove`], the value is removed by shifting all of the
+    /// elements either before or after it, preserving their relative order.
+    /// **This perturbs the index of all of the following elements!**
+    ///
+    /// Return `None` if `value` was not in the set.
+    pub fn remove_full<Q>(&mut self, value: &Q) -> Option<(usize, T)>
+    where
+        Q: ?Sized + Hash + Equivalent<T>,
+    {
+        self.map.remove_full(value).map(|(i, x, ())| (i, x))
+    }
+
+    /// Remove the value from the set, and return `true` if it was present.
+    ///
+    /// Like [`VecDeque::swap_remove_back`], the value is removed by swapping it with the
+    /// last element of the set and popping it off. **This perturbs
+    /// the position of what used to be the last element!**
+    ///
+    /// Return `false` if `value` was not in the set.
+    ///
+    /// Computes in **O(1)** time (average).
+    pub fn swap_remove_back<Q>(&mut self, value: &Q) -> bool
+    where
+        Q: ?Sized + Hash + Equivalent<T>,
+    {
+        self.map.swap_remove_back(value).is_some()
     }
 
     /// Removes and returns the value in the set, if any, that is equal to the
     /// given one.
     ///
-    /// Like [`Vec::swap_remove`], the value is removed by swapping it with the
+    /// Like [`VecDeque::swap_remove_back`], the value is removed by swapping it with the
     /// last element of the set and popping it off. **This perturbs
     /// the position of what used to be the last element!**
     ///
     /// Return `None` if `value` was not in the set.
     ///
     /// Computes in **O(1)** time (average).
-    pub fn swap_take<Q>(&mut self, value: &Q) -> Option<T>
+    pub fn swap_take_back<Q>(&mut self, value: &Q) -> Option<T>
     where
         Q: ?Sized + Hash + Equivalent<T>,
     {
-        self.map.swap_remove_entry(value).map(|(x, ())| x)
+        self.map.swap_remove_back_entry(value).map(|(x, ())| x)
+    }
+
+    /// Remove the value from the set return it and the index it had.
+    ///
+    /// Like [`VecDeque::swap_remove_back`], the value is removed by swapping it with the
+    /// last element of the set and popping it off. **This perturbs
+    /// the position of what used to be the last element!**
+    ///
+    /// Return `None` if `value` was not in the set.
+    pub fn swap_remove_back_full<Q>(&mut self, value: &Q) -> Option<(usize, T)>
+    where
+        Q: ?Sized + Hash + Equivalent<T>,
+    {
+        self.map
+            .swap_remove_back_full(value)
+            .map(|(i, x, ())| (i, x))
+    }
+
+    /// Remove the value from the set, and return `true` if it was present.
+    ///
+    /// Like [`VecDeque::swap_remove_front`], the value is removed by swapping it with the
+    /// first element of the set and popping it off. **This perturbs
+    /// the position of what used to be the first element!**
+    ///
+    /// Return `false` if `value` was not in the set.
+    ///
+    /// Computes in **O(1)** time (average).
+    pub fn swap_remove_front<Q>(&mut self, value: &Q) -> bool
+    where
+        Q: ?Sized + Hash + Equivalent<T>,
+    {
+        self.map.swap_remove_front(value).is_some()
     }
 
     /// Removes and returns the value in the set, if any, that is equal to the
     /// given one.
     ///
-    /// Like [`Vec::remove`], the value is removed by shifting all of the
-    /// elements that follow it, preserving their relative order.
-    /// **This perturbs the index of all of those elements!**
+    /// Like [`VecDeque::swap_remove_front`], the value is removed by swapping it with the
+    /// first element of the set and popping it off. **This perturbs
+    /// the position of what used to be the first element!**
     ///
     /// Return `None` if `value` was not in the set.
     ///
-    /// Computes in **O(n)** time (average).
-    pub fn shift_take<Q>(&mut self, value: &Q) -> Option<T>
+    /// Computes in **O(1)** time (average).
+    pub fn swap_take_front<Q>(&mut self, value: &Q) -> Option<T>
     where
         Q: ?Sized + Hash + Equivalent<T>,
     {
-        self.map.shift_remove_entry(value).map(|(x, ())| x)
+        self.map.swap_remove_front_entry(value).map(|(x, ())| x)
     }
 
     /// Remove the value from the set return it and the index it had.
     ///
-    /// Like [`Vec::swap_remove`], the value is removed by swapping it with the
-    /// last element of the set and popping it off. **This perturbs
-    /// the position of what used to be the last element!**
+    /// Like [`VecDeque::swap_remove_front`], the value is removed by swapping it with the
+    /// first element of the set and popping it off. **This perturbs
+    /// the position of what used to be the first element!**
     ///
     /// Return `None` if `value` was not in the set.
-    pub fn swap_remove_full<Q>(&mut self, value: &Q) -> Option<(usize, T)>
+    pub fn swap_remove_front_full<Q>(&mut self, value: &Q) -> Option<(usize, T)>
     where
         Q: ?Sized + Hash + Equivalent<T>,
     {
-        self.map.swap_remove_full(value).map(|(i, x, ())| (i, x))
-    }
-
-    /// Remove the value from the set return it and the index it had.
-    ///
-    /// Like [`Vec::remove`], the value is removed by shifting all of the
-    /// elements that follow it, preserving their relative order.
-    /// **This perturbs the index of all of those elements!**
-    ///
-    /// Return `None` if `value` was not in the set.
-    pub fn shift_remove_full<Q>(&mut self, value: &Q) -> Option<(usize, T)>
-    where
-        Q: ?Sized + Hash + Equivalent<T>,
-    {
-        self.map.shift_remove_full(value).map(|(i, x, ())| (i, x))
+        self.map
+            .swap_remove_front_full(value)
+            .map(|(i, x, ())| (i, x))
     }
 }
 
-impl<T, S> IndexSet<T, S> {
+impl<T, S> RingSet<T, S> {
     /// Remove the last value
     ///
     /// This preserves the order of the remaining elements.
     ///
     /// Computes in **O(1)** time (average).
-    #[doc(alias = "pop_last")] // like `BTreeSet`
-    pub fn pop(&mut self) -> Option<T> {
-        self.map.pop().map(|(x, ())| x)
+    #[doc(alias = "pop", alias = "pop_last")] // like `Vec` and `BTreeSet`
+    pub fn pop_back(&mut self) -> Option<T> {
+        self.map.pop_back().map(|(x, ())| x)
+    }
+
+    /// Remove the first value
+    ///
+    /// This preserves the order of the remaining elements.
+    ///
+    /// Computes in **O(1)** time (average).
+    #[doc(alias = "pop_first")] // like `BTreeSet`
+    pub fn pop_front(&mut self) -> Option<T> {
+        self.map.pop_front().map(|(x, ())| x)
     }
 
     /// Scan through each value in the set and keep those where the
@@ -855,7 +913,9 @@ impl<T, S> IndexSet<T, S> {
         F: FnMut(&T, &T) -> Ordering,
     {
         let mut entries = self.into_entries();
-        entries.sort_by(move |a, b| cmp(&a.key, &b.key));
+        entries
+            .make_contiguous()
+            .sort_by(move |a, b| cmp(&a.key, &b.key));
         IntoIter::new(entries)
     }
 
@@ -886,7 +946,9 @@ impl<T, S> IndexSet<T, S> {
         F: FnMut(&T, &T) -> Ordering,
     {
         let mut entries = self.into_entries();
-        entries.sort_unstable_by(move |a, b| cmp(&a.key, &b.key));
+        entries
+            .make_contiguous()
+            .sort_unstable_by(move |a, b| cmp(&a.key, &b.key));
         IntoIter::new(entries)
     }
 
@@ -903,7 +965,7 @@ impl<T, S> IndexSet<T, S> {
         K: Ord,
         F: FnMut(&T) -> K,
     {
-        self.with_entries(move |entries| {
+        self.with_contiguous_entries(move |entries| {
             entries.sort_by_cached_key(move |a| sort_key(&a.key));
         });
     }
@@ -914,12 +976,12 @@ impl<T, S> IndexSet<T, S> {
     /// to maintain the sort. See [`slice::binary_search`] for more details.
     ///
     /// Computes in **O(log(n))** time, which is notably less scalable than looking the value up
-    /// using [`get_index_of`][IndexSet::get_index_of], but this can also position missing values.
+    /// using [`get_index_of`][RingSet::get_index_of], but this can also position missing values.
     pub fn binary_search(&self, x: &T) -> Result<usize, usize>
     where
         T: Ord,
     {
-        self.as_slice().binary_search(x)
+        self.map.binary_search_keys(x)
     }
 
     /// Search over a sorted set with a comparator function.
@@ -929,11 +991,11 @@ impl<T, S> IndexSet<T, S> {
     ///
     /// Computes in **O(log(n))** time.
     #[inline]
-    pub fn binary_search_by<'a, F>(&'a self, f: F) -> Result<usize, usize>
+    pub fn binary_search_by<'a, F>(&'a self, mut f: F) -> Result<usize, usize>
     where
         F: FnMut(&'a T) -> Ordering,
     {
-        self.as_slice().binary_search_by(f)
+        self.map.binary_search_by(move |key, ()| f(key))
     }
 
     /// Search over a sorted set with an extraction function.
@@ -943,12 +1005,12 @@ impl<T, S> IndexSet<T, S> {
     ///
     /// Computes in **O(log(n))** time.
     #[inline]
-    pub fn binary_search_by_key<'a, B, F>(&'a self, b: &B, f: F) -> Result<usize, usize>
+    pub fn binary_search_by_key<'a, B, F>(&'a self, b: &B, mut f: F) -> Result<usize, usize>
     where
         F: FnMut(&'a T) -> B,
         B: Ord,
     {
-        self.as_slice().binary_search_by_key(b, f)
+        self.map.binary_search_by_key(b, move |key, ()| f(key))
     }
 
     /// Returns the index of the partition point of a sorted set according to the given predicate
@@ -958,11 +1020,11 @@ impl<T, S> IndexSet<T, S> {
     ///
     /// Computes in **O(log(n))** time.
     #[must_use]
-    pub fn partition_point<P>(&self, pred: P) -> usize
+    pub fn partition_point<P>(&self, mut pred: P) -> usize
     where
         P: FnMut(&T) -> bool,
     {
-        self.as_slice().partition_point(pred)
+        self.map.partition_point(move |key, ()| pred(key))
     }
 
     /// Reverses the order of the set’s values in place.
@@ -972,18 +1034,27 @@ impl<T, S> IndexSet<T, S> {
         self.map.reverse()
     }
 
-    /// Returns a slice of all the values in the set.
+    /// Returns head and tail slices of all the values in the set.
     ///
     /// Computes in **O(1)** time.
-    pub fn as_slice(&self) -> &Slice<T> {
-        Slice::from_slice(self.as_entries())
+    pub fn as_slices(&self) -> (&Slice<T>, &Slice<T>) {
+        let (head, tail) = self.as_entries().as_slices();
+        (Slice::from_slice(head), Slice::from_slice(tail))
+    }
+
+    /// Rearranges the internal storage of this map so it is one contiguous slice,
+    /// which is then returned.
+    pub fn make_contiguous(&mut self) -> &Slice<T> {
+        Slice::from_slice(self.as_entries_mut().make_contiguous())
     }
 
     /// Converts into a boxed slice of all the values in the set.
     ///
-    /// Note that this will drop the inner hash table and any excess capacity.
+    /// Note that this will drop the inner hash table and any excess capacity,
+    /// and may need to move items if they're not at the beginning of the allocation.
     pub fn into_boxed_slice(self) -> Box<Slice<T>> {
-        Slice::from_boxed(self.into_entries().into_boxed_slice())
+        let entries = Vec::from(self.into_entries());
+        Slice::from_boxed(entries.into_boxed_slice())
     }
 
     /// Get a value by index
@@ -995,55 +1066,60 @@ impl<T, S> IndexSet<T, S> {
         self.as_entries().get(index).map(Bucket::key_ref)
     }
 
-    /// Returns a slice of values in the given range of indices.
-    ///
-    /// Valid indices are `0 <= index < self.len()`.
-    ///
-    /// Computes in **O(1)** time.
-    pub fn get_range<R: RangeBounds<usize>>(&self, range: R) -> Option<&Slice<T>> {
-        let entries = self.as_entries();
-        let range = try_simplify_range(range, entries.len())?;
-        entries.get(range).map(Slice::from_slice)
-    }
-
     /// Get the first value
     ///
     /// Computes in **O(1)** time.
-    pub fn first(&self) -> Option<&T> {
-        self.as_entries().first().map(Bucket::key_ref)
+    #[doc(alias = "first")] // like `BTreeSet`
+    pub fn front(&self) -> Option<&T> {
+        self.as_entries().get(0).map(Bucket::key_ref)
     }
 
     /// Get the last value
     ///
     /// Computes in **O(1)** time.
-    pub fn last(&self) -> Option<&T> {
-        self.as_entries().last().map(Bucket::key_ref)
+    #[doc(alias = "last")] // like `BTreeSet`
+    pub fn back(&self) -> Option<&T> {
+        let i = self.len().checked_sub(1)?;
+        self.as_entries().get(i).map(Bucket::key_ref)
     }
 
     /// Remove the value by index
     ///
     /// Valid indices are `0 <= index < self.len()`.
     ///
-    /// Like [`Vec::swap_remove`], the value is removed by swapping it with the
+    /// Like [`VecDeque::swap_remove_back`], the value is removed by swapping it with the
     /// last element of the set and popping it off. **This perturbs
     /// the position of what used to be the last element!**
     ///
     /// Computes in **O(1)** time (average).
-    pub fn swap_remove_index(&mut self, index: usize) -> Option<T> {
-        self.map.swap_remove_index(index).map(|(x, ())| x)
+    pub fn swap_remove_back_index(&mut self, index: usize) -> Option<T> {
+        self.map.swap_remove_back_index(index).map(|(x, ())| x)
     }
 
     /// Remove the value by index
     ///
     /// Valid indices are `0 <= index < self.len()`.
     ///
-    /// Like [`Vec::remove`], the value is removed by shifting all of the
-    /// elements that follow it, preserving their relative order.
-    /// **This perturbs the index of all of those elements!**
+    /// Like [`VecDeque::swap_remove_front`], the value is removed by swapping it with the
+    /// front element of the set and popping it off. **This perturbs
+    /// the position of what used to be the front element!**
+    ///
+    /// Computes in **O(1)** time (average).
+    pub fn swap_remove_front_index(&mut self, index: usize) -> Option<T> {
+        self.map.swap_remove_front_index(index).map(|(x, ())| x)
+    }
+
+    /// Remove the value by index
+    ///
+    /// Valid indices are `0 <= index < self.len()`.
+    ///
+    /// Like [`VecDeque::remove`], the value is removed by shifting all of the
+    /// elements either before or after it, preserving their relative order.
+    /// **This perturbs the index of all of the following elements!**
     ///
     /// Computes in **O(n)** time (average).
-    pub fn shift_remove_index(&mut self, index: usize) -> Option<T> {
-        self.map.shift_remove_index(index).map(|(x, ())| x)
+    pub fn remove_index(&mut self, index: usize) -> Option<T> {
+        self.map.remove_index(index).map(|(x, ())| x)
     }
 
     /// Moves the position of a value from one index to another
@@ -1071,14 +1147,14 @@ impl<T, S> IndexSet<T, S> {
     }
 }
 
-/// Access [`IndexSet`] values at indexed positions.
+/// Access [`RingSet`] values at indexed positions.
 ///
 /// # Examples
 ///
 /// ```
-/// use indexmap::IndexSet;
+/// use ringmap::RingSet;
 ///
-/// let mut set = IndexSet::new();
+/// let mut set = RingSet::new();
 /// for word in "Lorem ipsum dolor sit amet".split_whitespace() {
 ///     set.insert(word.to_string());
 /// }
@@ -1093,13 +1169,13 @@ impl<T, S> IndexSet<T, S> {
 /// ```
 ///
 /// ```should_panic
-/// use indexmap::IndexSet;
+/// use ringmap::RingSet;
 ///
-/// let mut set = IndexSet::new();
+/// let mut set = RingSet::new();
 /// set.insert("foo");
 /// println!("{:?}", set[10]); // panics!
 /// ```
-impl<T, S> Index<usize> for IndexSet<T, S> {
+impl<T, S> Index<usize> for RingSet<T, S> {
     type Output = T;
 
     /// Returns a reference to the value at the supplied `index`.
@@ -1115,32 +1191,32 @@ impl<T, S> Index<usize> for IndexSet<T, S> {
     }
 }
 
-impl<T, S> FromIterator<T> for IndexSet<T, S>
+impl<T, S> FromIterator<T> for RingSet<T, S>
 where
     T: Hash + Eq,
     S: BuildHasher + Default,
 {
     fn from_iter<I: IntoIterator<Item = T>>(iterable: I) -> Self {
         let iter = iterable.into_iter().map(|x| (x, ()));
-        IndexSet {
-            map: IndexMap::from_iter(iter),
+        RingSet {
+            map: RingMap::from_iter(iter),
         }
     }
 }
 
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
-impl<T, const N: usize> From<[T; N]> for IndexSet<T, RandomState>
+impl<T, const N: usize> From<[T; N]> for RingSet<T, RandomState>
 where
     T: Eq + Hash,
 {
     /// # Examples
     ///
     /// ```
-    /// use indexmap::IndexSet;
+    /// use ringmap::RingSet;
     ///
-    /// let set1 = IndexSet::from([1, 2, 3, 4]);
-    /// let set2: IndexSet<_> = [1, 2, 3, 4].into();
+    /// let set1 = RingSet::from([1, 2, 3, 4]);
+    /// let set2: RingSet<_> = [1, 2, 3, 4].into();
     /// assert_eq!(set1, set2);
     /// ```
     fn from(arr: [T; N]) -> Self {
@@ -1148,7 +1224,7 @@ where
     }
 }
 
-impl<T, S> Extend<T> for IndexSet<T, S>
+impl<T, S> Extend<T> for RingSet<T, S>
 where
     T: Hash + Eq,
     S: BuildHasher,
@@ -1159,7 +1235,7 @@ where
     }
 }
 
-impl<'a, T, S> Extend<&'a T> for IndexSet<T, S>
+impl<'a, T, S> Extend<&'a T> for RingSet<T, S>
 where
     T: Hash + Eq + Copy + 'a,
     S: BuildHasher,
@@ -1170,43 +1246,66 @@ where
     }
 }
 
-impl<T, S> Default for IndexSet<T, S>
+impl<T, S> Default for RingSet<T, S>
 where
     S: Default,
 {
-    /// Return an empty [`IndexSet`]
+    /// Return an empty [`RingSet`]
     fn default() -> Self {
-        IndexSet {
-            map: IndexMap::default(),
+        RingSet {
+            map: RingMap::default(),
         }
     }
 }
 
-impl<T, S1, S2> PartialEq<IndexSet<T, S2>> for IndexSet<T, S1>
+impl<T, S1, S2> PartialEq<RingSet<T, S2>> for RingSet<T, S1>
 where
-    T: Hash + Eq,
-    S1: BuildHasher,
-    S2: BuildHasher,
+    T: PartialEq,
 {
-    fn eq(&self, other: &IndexSet<T, S2>) -> bool {
-        self.len() == other.len() && self.is_subset(other)
+    fn eq(&self, other: &RingSet<T, S2>) -> bool {
+        self.len() == other.len() && self.iter().eq(other)
     }
 }
 
-impl<T, S> Eq for IndexSet<T, S>
+impl<T, S> Eq for RingSet<T, S> where T: Eq {}
+
+impl<T, S1, S2> PartialOrd<RingSet<T, S2>> for RingSet<T, S1>
 where
-    T: Eq + Hash,
-    S: BuildHasher,
+    T: PartialOrd,
 {
+    fn partial_cmp(&self, other: &RingSet<T, S2>) -> Option<Ordering> {
+        self.iter().partial_cmp(other)
+    }
 }
 
-impl<T, S> IndexSet<T, S>
+impl<T, S> Ord for RingSet<T, S>
+where
+    T: Ord,
+{
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.iter().cmp(other)
+    }
+}
+
+impl<T, S> Hash for RingSet<T, S>
+where
+    T: Hash,
+{
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.len().hash(state);
+        for value in self {
+            value.hash(state);
+        }
+    }
+}
+
+impl<T, S> RingSet<T, S>
 where
     T: Eq + Hash,
     S: BuildHasher,
 {
     /// Returns `true` if `self` has no elements in common with `other`.
-    pub fn is_disjoint<S2>(&self, other: &IndexSet<T, S2>) -> bool
+    pub fn is_disjoint<S2>(&self, other: &RingSet<T, S2>) -> bool
     where
         S2: BuildHasher,
     {
@@ -1218,7 +1317,7 @@ where
     }
 
     /// Returns `true` if all elements of `self` are contained in `other`.
-    pub fn is_subset<S2>(&self, other: &IndexSet<T, S2>) -> bool
+    pub fn is_subset<S2>(&self, other: &RingSet<T, S2>) -> bool
     where
         S2: BuildHasher,
     {
@@ -1226,76 +1325,87 @@ where
     }
 
     /// Returns `true` if all elements of `other` are contained in `self`.
-    pub fn is_superset<S2>(&self, other: &IndexSet<T, S2>) -> bool
+    pub fn is_superset<S2>(&self, other: &RingSet<T, S2>) -> bool
     where
         S2: BuildHasher,
     {
         other.is_subset(self)
     }
+
+    /// Returns `true` if `self` and `other` contain exactly the same elements,
+    /// even if they are not in the same order.
+    ///
+    /// (Note that `PartialEq for RingSet` **does** consider the order.)
+    pub fn set_eq<S2>(&self, other: &RingSet<T, S2>) -> bool
+    where
+        S2: BuildHasher,
+    {
+        self.len() == other.len() && self.is_subset(other)
+    }
 }
 
-impl<T, S1, S2> BitAnd<&IndexSet<T, S2>> for &IndexSet<T, S1>
+impl<T, S1, S2> BitAnd<&RingSet<T, S2>> for &RingSet<T, S1>
 where
     T: Eq + Hash + Clone,
     S1: BuildHasher + Default,
     S2: BuildHasher,
 {
-    type Output = IndexSet<T, S1>;
+    type Output = RingSet<T, S1>;
 
     /// Returns the set intersection, cloned into a new set.
     ///
     /// Values are collected in the same order that they appear in `self`.
-    fn bitand(self, other: &IndexSet<T, S2>) -> Self::Output {
+    fn bitand(self, other: &RingSet<T, S2>) -> Self::Output {
         self.intersection(other).cloned().collect()
     }
 }
 
-impl<T, S1, S2> BitOr<&IndexSet<T, S2>> for &IndexSet<T, S1>
+impl<T, S1, S2> BitOr<&RingSet<T, S2>> for &RingSet<T, S1>
 where
     T: Eq + Hash + Clone,
     S1: BuildHasher + Default,
     S2: BuildHasher,
 {
-    type Output = IndexSet<T, S1>;
+    type Output = RingSet<T, S1>;
 
     /// Returns the set union, cloned into a new set.
     ///
     /// Values from `self` are collected in their original order, followed by
     /// values that are unique to `other` in their original order.
-    fn bitor(self, other: &IndexSet<T, S2>) -> Self::Output {
+    fn bitor(self, other: &RingSet<T, S2>) -> Self::Output {
         self.union(other).cloned().collect()
     }
 }
 
-impl<T, S1, S2> BitXor<&IndexSet<T, S2>> for &IndexSet<T, S1>
+impl<T, S1, S2> BitXor<&RingSet<T, S2>> for &RingSet<T, S1>
 where
     T: Eq + Hash + Clone,
     S1: BuildHasher + Default,
     S2: BuildHasher,
 {
-    type Output = IndexSet<T, S1>;
+    type Output = RingSet<T, S1>;
 
     /// Returns the set symmetric-difference, cloned into a new set.
     ///
     /// Values from `self` are collected in their original order, followed by
     /// values from `other` in their original order.
-    fn bitxor(self, other: &IndexSet<T, S2>) -> Self::Output {
+    fn bitxor(self, other: &RingSet<T, S2>) -> Self::Output {
         self.symmetric_difference(other).cloned().collect()
     }
 }
 
-impl<T, S1, S2> Sub<&IndexSet<T, S2>> for &IndexSet<T, S1>
+impl<T, S1, S2> Sub<&RingSet<T, S2>> for &RingSet<T, S1>
 where
     T: Eq + Hash + Clone,
     S1: BuildHasher + Default,
     S2: BuildHasher,
 {
-    type Output = IndexSet<T, S1>;
+    type Output = RingSet<T, S1>;
 
     /// Returns the set difference, cloned into a new set.
     ///
     /// Values are collected in the same order that they appear in `self`.
-    fn sub(self, other: &IndexSet<T, S2>) -> Self::Output {
+    fn sub(self, other: &RingSet<T, S2>) -> Self::Output {
         self.difference(other).cloned().collect()
     }
 }

@@ -1,4 +1,4 @@
-//! Parallel iterator types for [`IndexMap`] with [`rayon`][::rayon].
+//! Parallel iterator types for [`RingMap`] with [`rayon`][::rayon].
 //!
 //! You will rarely need to interact with this module directly unless you need to name one of the
 //! iterator types.
@@ -7,8 +7,9 @@ use super::collect;
 use rayon::iter::plumbing::{Consumer, ProducerCallback, UnindexedConsumer};
 use rayon::prelude::*;
 
-use crate::vec::Vec;
 use alloc::boxed::Box;
+use alloc::collections::VecDeque;
+use alloc::vec::Vec;
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{BuildHasher, Hash};
@@ -17,9 +18,9 @@ use core::ops::RangeBounds;
 use crate::map::Slice;
 use crate::Bucket;
 use crate::Entries;
-use crate::IndexMap;
+use crate::RingMap;
 
-impl<K, V, S> IntoParallelIterator for IndexMap<K, V, S>
+impl<K, V, S> IntoParallelIterator for RingMap<K, V, S>
 where
     K: Send,
     V: Send,
@@ -49,12 +50,12 @@ where
     }
 }
 
-/// A parallel owning iterator over the entries of an [`IndexMap`].
+/// A parallel owning iterator over the entries of an [`RingMap`].
 ///
-/// This `struct` is created by the [`IndexMap::into_par_iter`] method
+/// This `struct` is created by the [`RingMap::into_par_iter`] method
 /// (provided by rayon's [`IntoParallelIterator`] trait). See its documentation for more.
 pub struct IntoParIter<K, V> {
-    entries: Vec<Bucket<K, V>>,
+    entries: VecDeque<Bucket<K, V>>,
 }
 
 impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for IntoParIter<K, V> {
@@ -74,7 +75,74 @@ impl<K: Send, V: Send> IndexedParallelIterator for IntoParIter<K, V> {
     indexed_parallel_iterator_methods!(Bucket::key_value);
 }
 
-impl<'a, K, V, S> IntoParallelIterator for &'a IndexMap<K, V, S>
+/// Internal iterator over `VecDeque` slices
+pub(super) struct ParBuckets<'a, K, V> {
+    head: &'a [Bucket<K, V>],
+    tail: &'a [Bucket<K, V>],
+}
+
+impl<'a, K, V> ParBuckets<'a, K, V> {
+    pub(super) fn new(entries: &'a VecDeque<Bucket<K, V>>) -> Self {
+        Self::from_slices(entries.as_slices())
+    }
+
+    pub(super) fn from_slices((head, tail): (&'a [Bucket<K, V>], &'a [Bucket<K, V>])) -> Self {
+        Self { head, tail }
+    }
+
+    pub(super) fn iter(&self) -> impl Iterator<Item = &Bucket<K, V>> {
+        self.head.iter().chain(self.tail)
+    }
+}
+
+impl<K, V> Clone for ParBuckets<'_, K, V> {
+    fn clone(&self) -> Self {
+        Self { ..*self }
+    }
+}
+
+impl<'a, K: Sync, V: Sync> ParallelIterator for ParBuckets<'a, K, V> {
+    type Item = &'a Bucket<K, V>;
+
+    fn drive_unindexed<C>(self, consumer: C) -> C::Result
+    where
+        C: UnindexedConsumer<Self::Item>,
+    {
+        self.head
+            .par_iter()
+            .chain(self.tail)
+            .drive_unindexed(consumer)
+    }
+
+    fn opt_len(&self) -> Option<usize> {
+        Some(self.len())
+    }
+}
+
+impl<'a, K: Sync, V: Sync> IndexedParallelIterator for ParBuckets<'a, K, V> {
+    fn drive<C>(self, consumer: C) -> C::Result
+    where
+        C: Consumer<Self::Item>,
+    {
+        self.head.par_iter().chain(self.tail).drive(consumer)
+    }
+
+    fn len(&self) -> usize {
+        self.head.len() + self.tail.len()
+    }
+
+    fn with_producer<CB>(self, callback: CB) -> CB::Output
+    where
+        CB: ProducerCallback<Self::Item>,
+    {
+        self.head
+            .par_iter()
+            .chain(self.tail)
+            .with_producer(callback)
+    }
+}
+
+impl<'a, K, V, S> IntoParallelIterator for &'a RingMap<K, V, S>
 where
     K: Sync,
     V: Sync,
@@ -84,7 +152,7 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         ParIter {
-            entries: self.as_entries(),
+            entries: ParBuckets::new(self.as_entries()),
         }
     }
 }
@@ -99,24 +167,26 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         ParIter {
-            entries: &self.entries,
+            entries: ParBuckets::from_slices((&self.entries, &[])),
         }
     }
 }
 
-/// A parallel iterator over the entries of an [`IndexMap`].
+/// A parallel iterator over the entries of an [`RingMap`].
 ///
-/// This `struct` is created by the [`IndexMap::par_iter`] method
+/// This `struct` is created by the [`RingMap::par_iter`] method
 /// (provided by rayon's [`IntoParallelRefIterator`] trait). See its documentation for more.
 ///
-/// [`IndexMap::par_iter`]: ../struct.IndexMap.html#method.par_iter
+/// [`RingMap::par_iter`]: ../struct.RingMap.html#method.par_iter
 pub struct ParIter<'a, K, V> {
-    entries: &'a [Bucket<K, V>],
+    entries: ParBuckets<'a, K, V>,
 }
 
 impl<K, V> Clone for ParIter<'_, K, V> {
     fn clone(&self) -> Self {
-        ParIter { ..*self }
+        ParIter {
+            entries: self.entries.clone(),
+        }
     }
 }
 
@@ -137,7 +207,68 @@ impl<K: Sync, V: Sync> IndexedParallelIterator for ParIter<'_, K, V> {
     indexed_parallel_iterator_methods!(Bucket::refs);
 }
 
-impl<'a, K, V, S> IntoParallelIterator for &'a mut IndexMap<K, V, S>
+/// Internal iterator over `VecDeque` mutable slices
+struct ParBucketsMut<'a, K, V> {
+    head: &'a mut [Bucket<K, V>],
+    tail: &'a mut [Bucket<K, V>],
+}
+
+impl<'a, K, V> ParBucketsMut<'a, K, V> {
+    fn new(entries: &'a mut VecDeque<Bucket<K, V>>) -> Self {
+        Self::from_mut_slices(entries.as_mut_slices())
+    }
+
+    fn from_mut_slices((head, tail): (&'a mut [Bucket<K, V>], &'a mut [Bucket<K, V>])) -> Self {
+        Self { head, tail }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &Bucket<K, V>> {
+        self.head.iter().chain(&*self.tail)
+    }
+}
+
+impl<'a, K: Send, V: Send> ParallelIterator for ParBucketsMut<'a, K, V> {
+    type Item = &'a mut Bucket<K, V>;
+
+    fn drive_unindexed<C>(self, consumer: C) -> C::Result
+    where
+        C: UnindexedConsumer<Self::Item>,
+    {
+        self.head
+            .par_iter_mut()
+            .chain(self.tail)
+            .drive_unindexed(consumer)
+    }
+
+    fn opt_len(&self) -> Option<usize> {
+        Some(self.len())
+    }
+}
+
+impl<'a, K: Send, V: Send> IndexedParallelIterator for ParBucketsMut<'a, K, V> {
+    fn drive<C>(self, consumer: C) -> C::Result
+    where
+        C: Consumer<Self::Item>,
+    {
+        self.head.par_iter_mut().chain(self.tail).drive(consumer)
+    }
+
+    fn len(&self) -> usize {
+        self.head.len() + self.tail.len()
+    }
+
+    fn with_producer<CB>(self, callback: CB) -> CB::Output
+    where
+        CB: ProducerCallback<Self::Item>,
+    {
+        self.head
+            .par_iter_mut()
+            .chain(self.tail)
+            .with_producer(callback)
+    }
+}
+
+impl<'a, K, V, S> IntoParallelIterator for &'a mut RingMap<K, V, S>
 where
     K: Sync + Send,
     V: Send,
@@ -147,7 +278,7 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         ParIterMut {
-            entries: self.as_entries_mut(),
+            entries: ParBucketsMut::new(self.as_entries_mut()),
         }
     }
 }
@@ -162,19 +293,19 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         ParIterMut {
-            entries: &mut self.entries,
+            entries: ParBucketsMut::from_mut_slices((&mut self.entries, &mut [])),
         }
     }
 }
 
-/// A parallel mutable iterator over the entries of an [`IndexMap`].
+/// A parallel mutable iterator over the entries of an [`RingMap`].
 ///
-/// This `struct` is created by the [`IndexMap::par_iter_mut`] method
+/// This `struct` is created by the [`RingMap::par_iter_mut`] method
 /// (provided by rayon's [`IntoParallelRefMutIterator`] trait). See its documentation for more.
 ///
-/// [`IndexMap::par_iter_mut`]: ../struct.IndexMap.html#method.par_iter_mut
+/// [`RingMap::par_iter_mut`]: ../struct.RingMap.html#method.par_iter_mut
 pub struct ParIterMut<'a, K, V> {
-    entries: &'a mut [Bucket<K, V>],
+    entries: ParBucketsMut<'a, K, V>,
 }
 
 impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for ParIterMut<'_, K, V> {
@@ -194,7 +325,7 @@ impl<K: Sync + Send, V: Send> IndexedParallelIterator for ParIterMut<'_, K, V> {
     indexed_parallel_iterator_methods!(Bucket::ref_mut);
 }
 
-impl<'a, K, V, S> ParallelDrainRange<usize> for &'a mut IndexMap<K, V, S>
+impl<'a, K, V, S> ParallelDrainRange<usize> for &'a mut RingMap<K, V, S>
 where
     K: Send,
     V: Send,
@@ -209,14 +340,14 @@ where
     }
 }
 
-/// A parallel draining iterator over the entries of an [`IndexMap`].
+/// A parallel draining iterator over the entries of an [`RingMap`].
 ///
-/// This `struct` is created by the [`IndexMap::par_drain`] method
+/// This `struct` is created by the [`RingMap::par_drain`] method
 /// (provided by rayon's [`ParallelDrainRange`] trait). See its documentation for more.
 ///
-/// [`IndexMap::par_drain`]: ../struct.IndexMap.html#method.par_drain
+/// [`RingMap::par_drain`]: ../struct.RingMap.html#method.par_drain
 pub struct ParDrain<'a, K: Send, V: Send> {
-    entries: rayon::vec::Drain<'a, Bucket<K, V>>,
+    entries: rayon::collections::vec_deque::Drain<'a, Bucket<K, V>>,
 }
 
 impl<K: Send, V: Send> ParallelIterator for ParDrain<'_, K, V> {
@@ -234,7 +365,7 @@ impl<K: Send, V: Send> IndexedParallelIterator for ParDrain<'_, K, V> {
 /// The following methods **require crate feature `"rayon"`**.
 ///
 /// See also the `IntoParallelIterator` implementations.
-impl<K, V, S> IndexMap<K, V, S>
+impl<K, V, S> RingMap<K, V, S>
 where
     K: Sync,
     V: Sync,
@@ -245,7 +376,7 @@ where
     /// in the map is still preserved for operations like `reduce` and `collect`.
     pub fn par_keys(&self) -> ParKeys<'_, K, V> {
         ParKeys {
-            entries: self.as_entries(),
+            entries: ParBuckets::new(self.as_entries()),
         }
     }
 
@@ -255,7 +386,7 @@ where
     /// in the map is still preserved for operations like `reduce` and `collect`.
     pub fn par_values(&self) -> ParValues<'_, K, V> {
         ParValues {
-            entries: self.as_entries(),
+            entries: ParBuckets::new(self.as_entries()),
         }
     }
 }
@@ -276,7 +407,7 @@ where
     /// in the slice is still preserved for operations like `reduce` and `collect`.
     pub fn par_keys(&self) -> ParKeys<'_, K, V> {
         ParKeys {
-            entries: &self.entries,
+            entries: ParBuckets::from_slices((&self.entries, &[])),
         }
     }
 
@@ -286,43 +417,39 @@ where
     /// in the slice is still preserved for operations like `reduce` and `collect`.
     pub fn par_values(&self) -> ParValues<'_, K, V> {
         ParValues {
-            entries: &self.entries,
+            entries: ParBuckets::from_slices((&self.entries, &[])),
         }
     }
 }
 
-impl<K, V, S> IndexMap<K, V, S>
+impl<K, V, S> RingMap<K, V, S>
 where
-    K: Hash + Eq + Sync,
+    K: PartialEq + Sync,
     V: Sync,
-    S: BuildHasher,
 {
     /// Returns `true` if `self` contains all of the same key-value pairs as `other`,
-    /// regardless of each map's indexed order, determined in parallel.
-    pub fn par_eq<V2, S2>(&self, other: &IndexMap<K, V2, S2>) -> bool
+    /// in the same indexed order, determined in parallel.
+    pub fn par_eq<S2>(&self, other: &RingMap<K, V, S2>) -> bool
     where
-        V: PartialEq<V2>,
-        V2: Sync,
-        S2: BuildHasher + Sync,
+        V: PartialEq,
     {
-        self.len() == other.len()
-            && self
-                .par_iter()
-                .all(move |(key, value)| other.get(key).map_or(false, |v| *value == *v))
+        self.len() == other.len() && self.par_iter().eq(other)
     }
 }
 
-/// A parallel iterator over the keys of an [`IndexMap`].
+/// A parallel iterator over the keys of an [`RingMap`].
 ///
-/// This `struct` is created by the [`IndexMap::par_keys`] method.
+/// This `struct` is created by the [`RingMap::par_keys`] method.
 /// See its documentation for more.
 pub struct ParKeys<'a, K, V> {
-    entries: &'a [Bucket<K, V>],
+    entries: ParBuckets<'a, K, V>,
 }
 
 impl<K, V> Clone for ParKeys<'_, K, V> {
     fn clone(&self) -> Self {
-        ParKeys { ..*self }
+        ParKeys {
+            entries: self.entries.clone(),
+        }
     }
 }
 
@@ -343,17 +470,19 @@ impl<K: Sync, V: Sync> IndexedParallelIterator for ParKeys<'_, K, V> {
     indexed_parallel_iterator_methods!(Bucket::key_ref);
 }
 
-/// A parallel iterator over the values of an [`IndexMap`].
+/// A parallel iterator over the values of an [`RingMap`].
 ///
-/// This `struct` is created by the [`IndexMap::par_values`] method.
+/// This `struct` is created by the [`RingMap::par_values`] method.
 /// See its documentation for more.
 pub struct ParValues<'a, K, V> {
-    entries: &'a [Bucket<K, V>],
+    entries: ParBuckets<'a, K, V>,
 }
 
 impl<K, V> Clone for ParValues<'_, K, V> {
     fn clone(&self) -> Self {
-        ParValues { ..*self }
+        ParValues {
+            entries: self.entries.clone(),
+        }
     }
 }
 
@@ -374,7 +503,7 @@ impl<K: Sync, V: Sync> IndexedParallelIterator for ParValues<'_, K, V> {
     indexed_parallel_iterator_methods!(Bucket::value_ref);
 }
 
-impl<K, V, S> IndexMap<K, V, S>
+impl<K, V, S> RingMap<K, V, S>
 where
     K: Send,
     V: Send,
@@ -385,7 +514,7 @@ where
     /// in the map is still preserved for operations like `reduce` and `collect`.
     pub fn par_values_mut(&mut self) -> ParValuesMut<'_, K, V> {
         ParValuesMut {
-            entries: self.as_entries_mut(),
+            entries: ParBucketsMut::new(self.as_entries_mut()),
         }
     }
 }
@@ -401,12 +530,12 @@ where
     /// in the slice is still preserved for operations like `reduce` and `collect`.
     pub fn par_values_mut(&mut self) -> ParValuesMut<'_, K, V> {
         ParValuesMut {
-            entries: &mut self.entries,
+            entries: ParBucketsMut::from_mut_slices((&mut self.entries, &mut [])),
         }
     }
 }
 
-impl<K, V, S> IndexMap<K, V, S>
+impl<K, V, S> RingMap<K, V, S>
 where
     K: Send,
     V: Send,
@@ -416,7 +545,7 @@ where
     where
         K: Ord,
     {
-        self.with_entries(|entries| {
+        self.with_contiguous_entries(|entries| {
             entries.par_sort_by(|a, b| K::cmp(&a.key, &b.key));
         });
     }
@@ -430,7 +559,7 @@ where
     where
         F: Fn(&K, &V, &K, &V) -> Ordering + Sync,
     {
-        self.with_entries(|entries| {
+        self.with_contiguous_entries(|entries| {
             entries.par_sort_by(move |a, b| cmp(&a.key, &a.value, &b.key, &b.value));
         });
     }
@@ -442,7 +571,9 @@ where
         F: Fn(&K, &V, &K, &V) -> Ordering + Sync,
     {
         let mut entries = self.into_entries();
-        entries.par_sort_by(move |a, b| cmp(&a.key, &a.value, &b.key, &b.value));
+        entries
+            .make_contiguous()
+            .par_sort_by(move |a, b| cmp(&a.key, &a.value, &b.key, &b.value));
         IntoParIter { entries }
     }
 
@@ -451,7 +582,7 @@ where
     where
         K: Ord,
     {
-        self.with_entries(|entries| {
+        self.with_contiguous_entries(|entries| {
             entries.par_sort_unstable_by(|a, b| K::cmp(&a.key, &b.key));
         });
     }
@@ -465,7 +596,7 @@ where
     where
         F: Fn(&K, &V, &K, &V) -> Ordering + Sync,
     {
-        self.with_entries(|entries| {
+        self.with_contiguous_entries(|entries| {
             entries.par_sort_unstable_by(move |a, b| cmp(&a.key, &a.value, &b.key, &b.value));
         });
     }
@@ -477,7 +608,9 @@ where
         F: Fn(&K, &V, &K, &V) -> Ordering + Sync,
     {
         let mut entries = self.into_entries();
-        entries.par_sort_unstable_by(move |a, b| cmp(&a.key, &a.value, &b.key, &b.value));
+        entries
+            .make_contiguous()
+            .par_sort_unstable_by(move |a, b| cmp(&a.key, &a.value, &b.key, &b.value));
         IntoParIter { entries }
     }
 
@@ -488,18 +621,18 @@ where
         T: Ord + Send,
         F: Fn(&K, &V) -> T + Sync,
     {
-        self.with_entries(move |entries| {
+        self.with_contiguous_entries(move |entries| {
             entries.par_sort_by_cached_key(move |a| sort_key(&a.key, &a.value));
         });
     }
 }
 
-/// A parallel mutable iterator over the values of an [`IndexMap`].
+/// A parallel mutable iterator over the values of an [`RingMap`].
 ///
-/// This `struct` is created by the [`IndexMap::par_values_mut`] method.
+/// This `struct` is created by the [`RingMap::par_values_mut`] method.
 /// See its documentation for more.
 pub struct ParValuesMut<'a, K, V> {
-    entries: &'a mut [Bucket<K, V>],
+    entries: ParBucketsMut<'a, K, V>,
 }
 
 impl<K, V: fmt::Debug> fmt::Debug for ParValuesMut<'_, K, V> {
@@ -519,7 +652,7 @@ impl<K: Send, V: Send> IndexedParallelIterator for ParValuesMut<'_, K, V> {
     indexed_parallel_iterator_methods!(Bucket::value_mut);
 }
 
-impl<K, V, S> FromParallelIterator<(K, V)> for IndexMap<K, V, S>
+impl<K, V, S> FromParallelIterator<(K, V)> for RingMap<K, V, S>
 where
     K: Eq + Hash + Send,
     V: Send,
@@ -539,7 +672,7 @@ where
     }
 }
 
-impl<K, V, S> ParallelExtend<(K, V)> for IndexMap<K, V, S>
+impl<K, V, S> ParallelExtend<(K, V)> for RingMap<K, V, S>
 where
     K: Eq + Hash + Send,
     V: Send,
@@ -555,7 +688,7 @@ where
     }
 }
 
-impl<'a, K: 'a, V: 'a, S> ParallelExtend<(&'a K, &'a V)> for IndexMap<K, V, S>
+impl<'a, K: 'a, V: 'a, S> ParallelExtend<(&'a K, &'a V)> for RingMap<K, V, S>
 where
     K: Copy + Eq + Hash + Send + Sync,
     V: Copy + Send + Sync,
@@ -574,12 +707,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::string::String;
 
     #[test]
     fn insert_order() {
         let insert = [0, 4, 2, 12, 8, 7, 11, 5, 3, 17, 19, 22, 23];
-        let mut map = IndexMap::new();
+        let mut map = RingMap::new();
 
         for &elt in &insert {
             map.insert(elt, ());
@@ -600,25 +732,20 @@ mod tests {
 
     #[test]
     fn partial_eq_and_eq() {
-        let mut map_a = IndexMap::new();
+        let mut map_a = RingMap::new();
         map_a.insert(1, "1");
         map_a.insert(2, "2");
         let mut map_b = map_a.clone();
         assert!(map_a.par_eq(&map_b));
-        map_b.swap_remove(&1);
+        map_b.swap_remove_back(&1);
         assert!(!map_a.par_eq(&map_b));
         map_b.insert(3, "3");
         assert!(!map_a.par_eq(&map_b));
-
-        let map_c: IndexMap<_, String> =
-            map_b.into_par_iter().map(|(k, v)| (k, v.into())).collect();
-        assert!(!map_a.par_eq(&map_c));
-        assert!(!map_c.par_eq(&map_a));
     }
 
     #[test]
     fn extend() {
-        let mut map = IndexMap::new();
+        let mut map = RingMap::new();
         map.par_extend(vec![(&1, &2), (&3, &4)]);
         map.par_extend(vec![(5, 6)]);
         assert_eq!(
@@ -630,7 +757,7 @@ mod tests {
     #[test]
     fn keys() {
         let vec = vec![(1, 'a'), (2, 'b'), (3, 'c')];
-        let map: IndexMap<_, _> = vec.into_par_iter().collect();
+        let map: RingMap<_, _> = vec.into_par_iter().collect();
         let keys: Vec<_> = map.par_keys().copied().collect();
         assert_eq!(keys.len(), 3);
         assert!(keys.contains(&1));
@@ -641,7 +768,7 @@ mod tests {
     #[test]
     fn values() {
         let vec = vec![(1, 'a'), (2, 'b'), (3, 'c')];
-        let map: IndexMap<_, _> = vec.into_par_iter().collect();
+        let map: RingMap<_, _> = vec.into_par_iter().collect();
         let values: Vec<_> = map.par_values().copied().collect();
         assert_eq!(values.len(), 3);
         assert!(values.contains(&'a'));
@@ -652,7 +779,7 @@ mod tests {
     #[test]
     fn values_mut() {
         let vec = vec![(1, 1), (2, 2), (3, 3)];
-        let mut map: IndexMap<_, _> = vec.into_par_iter().collect();
+        let mut map: RingMap<_, _> = vec.into_par_iter().collect();
         map.par_values_mut().for_each(|value| *value *= 2);
         let values: Vec<_> = map.par_values().copied().collect();
         assert_eq!(values.len(), 3);

@@ -1,5 +1,5 @@
-use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
+use ringmap::{RingMap, RingSet};
 
 use quickcheck::Arbitrary;
 use quickcheck::Gen;
@@ -9,7 +9,7 @@ use quickcheck::TestResult;
 use fnv::FnvHasher;
 use std::hash::{BuildHasher, BuildHasherDefault};
 type FnvBuilder = BuildHasherDefault<FnvHasher>;
-type IndexMapFnv<K, V> = IndexMap<K, V, FnvBuilder>;
+type RingMapFnv<K, V> = RingMap<K, V, FnvBuilder>;
 
 use std::cmp::min;
 use std::collections::HashMap;
@@ -19,7 +19,7 @@ use std::hash::Hash;
 use std::ops::Bound;
 use std::ops::Deref;
 
-use indexmap::map::Entry;
+use ringmap::map::Entry;
 use std::collections::hash_map::Entry as StdEntry;
 
 fn set<'a, T: 'a, I>(iter: I) -> HashSet<T>
@@ -30,12 +30,12 @@ where
     iter.into_iter().copied().collect()
 }
 
-fn indexmap<'a, T: 'a, I>(iter: I) -> IndexMap<T, ()>
+fn ringmap<'a, T: 'a, I>(iter: I) -> RingMap<T, ()>
 where
     I: IntoIterator<Item = &'a T>,
     T: Copy + Hash + Eq,
 {
-    IndexMap::from_iter(iter.into_iter().copied().map(|k| (k, ())))
+    RingMap::from_iter(iter.into_iter().copied().map(|k| (k, ())))
 }
 
 // Helper macro to allow us to use smaller quickcheck limits under miri.
@@ -75,7 +75,7 @@ macro_rules! quickcheck_limit {
 
 quickcheck_limit! {
     fn contains(insert: Vec<u32>) -> bool {
-        let mut map = IndexMap::new();
+        let mut map = RingMap::new();
         for &key in &insert {
             map.insert(key, ());
         }
@@ -83,7 +83,7 @@ quickcheck_limit! {
     }
 
     fn contains_not(insert: Vec<u8>, not: Vec<u8>) -> bool {
-        let mut map = IndexMap::new();
+        let mut map = RingMap::new();
         for &key in &insert {
             map.insert(key, ());
         }
@@ -92,12 +92,38 @@ quickcheck_limit! {
     }
 
     fn insert_remove(insert: Vec<u8>, remove: Vec<u8>) -> bool {
-        let mut map = IndexMap::new();
+        let mut map = RingMap::new();
         for &key in &insert {
             map.insert(key, ());
         }
         for &key in &remove {
-            map.swap_remove(&key);
+            map.remove(&key);
+        }
+        let elements = &set(&insert) - &set(&remove);
+        map.len() == elements.len() && map.iter().count() == elements.len() &&
+            elements.iter().all(|k| map.get(k).is_some())
+    }
+
+    fn insert_swap_remove_back(insert: Vec<u8>, remove: Vec<u8>) -> bool {
+        let mut map = RingMap::new();
+        for &key in &insert {
+            map.insert(key, ());
+        }
+        for &key in &remove {
+            map.swap_remove_back(&key);
+        }
+        let elements = &set(&insert) - &set(&remove);
+        map.len() == elements.len() && map.iter().count() == elements.len() &&
+            elements.iter().all(|k| map.get(k).is_some())
+    }
+
+    fn insert_swap_remove_front(insert: Vec<u8>, remove: Vec<u8>) -> bool {
+        let mut map = RingMap::new();
+        for &key in &insert {
+            map.insert(key, ());
+        }
+        for &key in &remove {
+            map.swap_remove_front(&key);
         }
         let elements = &set(&insert) - &set(&remove);
         map.len() == elements.len() && map.iter().count() == elements.len() &&
@@ -105,7 +131,7 @@ quickcheck_limit! {
     }
 
     fn insertion_order(insert: Vec<u32>) -> bool {
-        let mut map = IndexMap::new();
+        let mut map = RingMap::new();
         for &key in &insert {
             map.insert(key, ());
         }
@@ -115,8 +141,8 @@ quickcheck_limit! {
 
     fn insert_sorted(insert: Vec<(u32, u32)>) -> bool {
         let mut hmap = HashMap::new();
-        let mut map = IndexMap::new();
-        let mut map2 = IndexMap::new();
+        let mut map = RingMap::new();
+        let mut map2 = RingMap::new();
         for &(key, value) in &insert {
             hmap.insert(key, value);
             map.insert_sorted(key, value);
@@ -130,13 +156,13 @@ quickcheck_limit! {
         true
     }
 
-    fn pop(insert: Vec<u8>) -> bool {
-        let mut map = IndexMap::new();
+    fn pop_back(insert: Vec<u8>) -> bool {
+        let mut map = RingMap::new();
         for &key in &insert {
             map.insert(key, ());
         }
         let mut pops = Vec::new();
-        while let Some((key, _v)) = map.pop() {
+        while let Some((key, _v)) = map.pop_back() {
             pops.push(key);
         }
         pops.reverse();
@@ -145,28 +171,42 @@ quickcheck_limit! {
         true
     }
 
+    fn pop_front(insert: Vec<u8>) -> bool {
+        let mut map = RingMap::new();
+        for &key in &insert {
+            map.insert(key, ());
+        }
+        let mut pops = Vec::new();
+        while let Some((key, _v)) = map.pop_front() {
+            pops.push(key);
+        }
+
+        itertools::assert_equal(insert.iter().unique(), &pops);
+        true
+    }
+
     fn with_cap(template: Vec<()>) -> bool {
         let cap = template.len();
-        let map: IndexMap<u8, u8> = IndexMap::with_capacity(cap);
+        let map: RingMap<u8, u8> = RingMap::with_capacity(cap);
         println!("wish: {}, got: {} (diff: {})", cap, map.capacity(), map.capacity() as isize - cap as isize);
         map.capacity() >= cap
     }
 
     fn drain_full(insert: Vec<u8>) -> bool {
-        let mut map = IndexMap::new();
+        let mut map = RingMap::new();
         for &key in &insert {
             map.insert(key, ());
         }
         let mut clone = map.clone();
         let drained = clone.drain(..);
         for (key, _) in drained {
-            map.swap_remove(&key);
+            map.swap_remove_back(&key);
         }
         map.is_empty()
     }
 
     fn drain_bounds(insert: Vec<u8>, range: (Bound<usize>, Bound<usize>)) -> TestResult {
-        let mut map = IndexMap::new();
+        let mut map = RingMap::new();
         for &key in &insert {
             map.insert(key, ());
         }
@@ -191,13 +231,13 @@ quickcheck_limit! {
         }
     }
 
-    fn shift_remove(insert: Vec<u8>, remove: Vec<u8>) -> bool {
-        let mut map = IndexMap::new();
+    fn remove(insert: Vec<u8>, remove: Vec<u8>) -> bool {
+        let mut map = RingMap::new();
         for &key in &insert {
             map.insert(key, ());
         }
         for &key in &remove {
-            map.shift_remove(&key);
+            map.remove(&key);
         }
         let elements = &set(&insert) - &set(&remove);
 
@@ -214,8 +254,8 @@ quickcheck_limit! {
     }
 
     fn indexing(insert: Vec<u8>) -> bool {
-        let mut map: IndexMap<_, _> = insert.into_iter().map(|x| (x, x)).collect();
-        let set: IndexSet<_> = map.keys().copied().collect();
+        let mut map: RingMap<_, _> = insert.into_iter().map(|x| (x, x)).collect();
+        let set: RingSet<_> = map.keys().copied().collect();
         assert_eq!(map.len(), set.len());
 
         for (i, &key) in set.iter().enumerate() {
@@ -236,7 +276,7 @@ quickcheck_limit! {
 
     // Use `u8` test indices so quickcheck is less likely to go out of bounds.
     fn set_swap_indices(vec: Vec<u8>, a: u8, b: u8) -> TestResult {
-        let mut set = IndexSet::<u8>::from_iter(vec);
+        let mut set = RingSet::<u8>::from_iter(vec);
         let a = usize::from(a);
         let b = usize::from(b);
 
@@ -258,12 +298,12 @@ quickcheck_limit! {
     }
 
     fn map_swap_indices(vec: Vec<u8>, from: u8, to: u8) -> TestResult {
-        test_map_swap_indices(vec, from, to, IndexMap::swap_indices)
+        test_map_swap_indices(vec, from, to, RingMap::swap_indices)
     }
 
     fn occupied_entry_swap_indices(vec: Vec<u8>, from: u8, to: u8) -> TestResult {
         test_map_swap_indices(vec, from, to, |map, from, to| {
-            let key = map.keys()[from];
+            let key = *map.get_index(from).unwrap().0;
             match map.entry(key) {
                 Entry::Occupied(entry) => entry.swap_indices(to),
                 _ => unreachable!(),
@@ -278,9 +318,9 @@ quickcheck_limit! {
     }
 
     fn raw_occupied_entry_swap_indices(vec: Vec<u8>, from: u8, to: u8) -> TestResult {
-        use indexmap::map::raw_entry_v1::{RawEntryApiV1, RawEntryMut};
+        use ringmap::map::raw_entry_v1::{RawEntryApiV1, RawEntryMut};
         test_map_swap_indices(vec, from, to, |map, from, to| {
-            let key = map.keys()[from];
+            let key = *map.get_index(from).unwrap().0;
             match map.raw_entry_mut_v1().from_key(&key) {
                 RawEntryMut::Occupied(entry) => entry.swap_indices(to),
                 _ => unreachable!(),
@@ -290,7 +330,7 @@ quickcheck_limit! {
 
     // Use `u8` test indices so quickcheck is less likely to go out of bounds.
     fn set_move_index(vec: Vec<u8>, from: u8, to: u8) -> TestResult {
-        let mut set = IndexSet::<u8>::from_iter(vec);
+        let mut set = RingSet::<u8>::from_iter(vec);
         let from = usize::from(from);
         let to = usize::from(to);
 
@@ -313,12 +353,12 @@ quickcheck_limit! {
     }
 
     fn map_move_index(vec: Vec<u8>, from: u8, to: u8) -> TestResult {
-        test_map_move_index(vec, from, to, IndexMap::move_index)
+        test_map_move_index(vec, from, to, RingMap::move_index)
     }
 
     fn occupied_entry_move_index(vec: Vec<u8>, from: u8, to: u8) -> TestResult {
         test_map_move_index(vec, from, to, |map, from, to| {
-            let key = map.keys()[from];
+            let key = *map.get_index(from).unwrap().0;
             match map.entry(key) {
                 Entry::Occupied(entry) => entry.move_index(to),
                 _ => unreachable!(),
@@ -333,9 +373,9 @@ quickcheck_limit! {
     }
 
     fn raw_occupied_entry_move_index(vec: Vec<u8>, from: u8, to: u8) -> TestResult {
-        use indexmap::map::raw_entry_v1::{RawEntryApiV1, RawEntryMut};
+        use ringmap::map::raw_entry_v1::{RawEntryApiV1, RawEntryMut};
         test_map_move_index(vec, from, to, |map, from, to| {
-            let key = map.keys()[from];
+            let key = *map.get_index(from).unwrap().0;
             match map.raw_entry_mut_v1().from_key(&key) {
                 RawEntryMut::Occupied(entry) => entry.move_index(to),
                 _ => unreachable!(),
@@ -353,7 +393,7 @@ quickcheck_limit! {
     }
 
     fn raw_occupied_entry_shift_insert(vec: Vec<u8>, i: u8) -> TestResult {
-        use indexmap::map::raw_entry_v1::{RawEntryApiV1, RawEntryMut};
+        use ringmap::map::raw_entry_v1::{RawEntryApiV1, RawEntryMut};
         test_map_shift_insert(vec, i, |map, i, key| {
             match map.raw_entry_mut_v1().from_key(&key) {
                 RawEntryMut::Vacant(entry) => entry.shift_insert(i, key, ()),
@@ -365,9 +405,9 @@ quickcheck_limit! {
 
 fn test_map_swap_indices<F>(vec: Vec<u8>, a: u8, b: u8, swap_indices: F) -> TestResult
 where
-    F: FnOnce(&mut IndexMap<u8, ()>, usize, usize),
+    F: FnOnce(&mut RingMap<u8, ()>, usize, usize),
 {
-    let mut map = IndexMap::<u8, ()>::from_iter(vec.into_iter().map(|k| (k, ())));
+    let mut map = RingMap::<u8, ()>::from_iter(vec.into_iter().map(|k| (k, ())));
     let a = usize::from(a);
     let b = usize::from(b);
 
@@ -391,9 +431,9 @@ where
 
 fn test_map_move_index<F>(vec: Vec<u8>, from: u8, to: u8, move_index: F) -> TestResult
 where
-    F: FnOnce(&mut IndexMap<u8, ()>, usize, usize),
+    F: FnOnce(&mut RingMap<u8, ()>, usize, usize),
 {
-    let mut map = IndexMap::<u8, ()>::from_iter(vec.into_iter().map(|k| (k, ())));
+    let mut map = RingMap::<u8, ()>::from_iter(vec.into_iter().map(|k| (k, ())));
     let from = usize::from(from);
     let to = usize::from(to);
 
@@ -418,9 +458,9 @@ where
 
 fn test_map_shift_insert<F>(vec: Vec<u8>, i: u8, shift_insert: F) -> TestResult
 where
-    F: FnOnce(&mut IndexMap<u8, ()>, usize, u8),
+    F: FnOnce(&mut RingMap<u8, ()>, usize, u8),
 {
-    let mut map = IndexMap::<u8, ()>::from_iter(vec.into_iter().map(|k| (k, ())));
+    let mut map = RingMap::<u8, ()>::from_iter(vec.into_iter().map(|k| (k, ())));
     let i = usize::from(i);
     if i >= map.len() {
         return TestResult::discard();
@@ -430,7 +470,7 @@ where
     let x = vec.pop().unwrap();
     vec.insert(i, x);
 
-    let (last, ()) = map.pop().unwrap();
+    let (last, ()) = map.pop_back().unwrap();
     assert_eq!(x, last);
     map.shrink_to_fit(); // so we might have to grow and rehash the table
 
@@ -469,7 +509,7 @@ where
     }
 }
 
-fn do_ops<K, V, S>(ops: &[Op<K, V>], a: &mut IndexMap<K, V, S>, b: &mut HashMap<K, V>)
+fn do_ops<K, V, S>(ops: &[Op<K, V>], a: &mut RingMap<K, V, S>, b: &mut HashMap<K, V>)
 where
     K: Hash + Eq + Clone,
     V: Clone,
@@ -486,12 +526,12 @@ where
                 b.entry(k.clone()).or_insert_with(|| v.clone());
             }
             Remove(ref k) => {
-                a.swap_remove(k);
+                a.swap_remove_back(k);
                 b.remove(k);
             }
             RemoveEntry(ref k) => {
                 if let Entry::Occupied(ent) = a.entry(k.clone()) {
-                    ent.swap_remove_entry();
+                    ent.swap_remove_back_entry();
                 }
                 if let StdEntry::Occupied(ent) = b.entry(k.clone()) {
                     ent.remove_entry();
@@ -502,7 +542,7 @@ where
     }
 }
 
-fn assert_maps_equivalent<K, V>(a: &IndexMap<K, V>, b: &HashMap<K, V>) -> bool
+fn assert_maps_equivalent<K, V>(a: &RingMap<K, V>, b: &HashMap<K, V>) -> bool
 where
     K: Hash + Eq + Debug,
     V: Eq + Debug,
@@ -523,24 +563,24 @@ where
 
 quickcheck_limit! {
     fn operations_i8(ops: Large<Vec<Op<i8, i8>>>) -> bool {
-        let mut map = IndexMap::new();
+        let mut map = RingMap::new();
         let mut reference = HashMap::new();
         do_ops(&ops, &mut map, &mut reference);
         assert_maps_equivalent(&map, &reference)
     }
 
     fn operations_string(ops: Vec<Op<Alpha, i8>>) -> bool {
-        let mut map = IndexMap::new();
+        let mut map = RingMap::new();
         let mut reference = HashMap::new();
         do_ops(&ops, &mut map, &mut reference);
         assert_maps_equivalent(&map, &reference)
     }
 
     fn keys_values(ops: Large<Vec<Op<i8, i8>>>) -> bool {
-        let mut map = IndexMap::new();
+        let mut map = RingMap::new();
         let mut reference = HashMap::new();
         do_ops(&ops, &mut map, &mut reference);
-        let mut visit = IndexMap::new();
+        let mut visit = RingMap::new();
         for (k, v) in map.keys().zip(map.values()) {
             assert_eq!(&map[k], v);
             assert!(!visit.contains_key(k));
@@ -551,10 +591,10 @@ quickcheck_limit! {
     }
 
     fn keys_values_mut(ops: Large<Vec<Op<i8, i8>>>) -> bool {
-        let mut map = IndexMap::new();
+        let mut map = RingMap::new();
         let mut reference = HashMap::new();
         do_ops(&ops, &mut map, &mut reference);
-        let mut visit = IndexMap::new();
+        let mut visit = RingMap::new();
         let keys = Vec::from_iter(map.keys().copied());
         for (k, v) in keys.iter().zip(map.values_mut()) {
             assert_eq!(&reference[k], v);
@@ -566,7 +606,7 @@ quickcheck_limit! {
     }
 
     fn equality(ops1: Vec<Op<i8, i8>>, removes: Vec<usize>) -> bool {
-        let mut map = IndexMap::new();
+        let mut map = RingMap::new();
         let mut reference = HashMap::new();
         do_ops(&ops1, &mut map, &mut reference);
         let mut ops2 = ops1.clone();
@@ -576,17 +616,20 @@ quickcheck_limit! {
                 ops2.remove(i);
             }
         }
-        let mut map2 = IndexMapFnv::default();
+        let mut map2 = RingMapFnv::default();
         let mut reference2 = HashMap::new();
         do_ops(&ops2, &mut map2, &mut reference2);
+
+        map.sort_keys();
+        map2.sort_keys();
         assert_eq!(map == map2, reference == reference2);
         true
     }
 
     fn retain_ordered(keys: Large<Vec<i8>>, remove: Large<Vec<i8>>) -> () {
-        let mut map = indexmap(keys.iter());
+        let mut map = ringmap(keys.iter());
         let initial_map = map.clone(); // deduplicated in-order input
-        let remove_map = indexmap(remove.iter());
+        let remove_map = ringmap(remove.iter());
         let keys_s = set(keys.iter());
         let remove_s = set(remove.iter());
         let answer = &keys_s - &remove_s;
@@ -602,11 +645,11 @@ quickcheck_limit! {
     }
 
     fn sort_1(keyvals: Large<Vec<(i8, i8)>>) -> () {
-        let mut map: IndexMap<_, _> = IndexMap::from_iter(keyvals.to_vec());
+        let mut map: RingMap<_, _> = RingMap::from_iter(keyvals.to_vec());
         let mut answer = keyvals.0;
         answer.sort_by_key(|t| t.0);
 
-        // reverse dedup: Because IndexMap::from_iter keeps the last value for
+        // reverse dedup: Because RingMap::from_iter keeps the last value for
         // identical keys
         answer.reverse();
         answer.dedup_by_key(|t| t.0);
@@ -627,22 +670,22 @@ quickcheck_limit! {
     }
 
     fn sort_2(keyvals: Large<Vec<(i8, i8)>>) -> () {
-        let mut map: IndexMap<_, _> = IndexMap::from_iter(keyvals.to_vec());
+        let mut map: RingMap<_, _> = RingMap::from_iter(keyvals.to_vec());
         map.sort_by(|_, v1, _, v2| Ord::cmp(v1, v2));
         assert_sorted_by_key(map, |t| t.1);
     }
 
     fn sort_3(keyvals: Large<Vec<(i8, i8)>>) -> () {
-        let mut map: IndexMap<_, _> = IndexMap::from_iter(keyvals.to_vec());
+        let mut map: RingMap<_, _> = RingMap::from_iter(keyvals.to_vec());
         map.sort_by_cached_key(|&k, _| std::cmp::Reverse(k));
         assert_sorted_by_key(map, |t| std::cmp::Reverse(t.0));
     }
 
     fn reverse(keyvals: Large<Vec<(i8, i8)>>) -> () {
-        let mut map: IndexMap<_, _> = IndexMap::from_iter(keyvals.to_vec());
+        let mut map: RingMap<_, _> = RingMap::from_iter(keyvals.to_vec());
 
         fn generate_answer(input: &Vec<(i8, i8)>) -> Vec<(i8, i8)> {
-            // to mimic what `IndexMap::from_iter` does:
+            // to mimic what `RingMap::from_iter` does:
             // need to get (A) the unique keys in forward order, and (B) the
             // last value of each of those keys.
 

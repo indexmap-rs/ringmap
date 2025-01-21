@@ -3,19 +3,21 @@
 #![warn(rust_2018_idioms)]
 #![no_std]
 
-//! [`IndexMap`] is a hash table where the iteration order of the key-value
-//! pairs is independent of the hash values of the keys.
+//! [`RingMap`] is a hash table where the iteration order of the key-value pairs is
+//! independent of the hash values of the keys. Entries are stored in a ring buffer
+//! (`VecDeque`), allowing efficient manipulation of both the front and back ends.
 //!
-//! [`IndexSet`] is a corresponding hash set using the same implementation and
+//! [`RingSet`] is a corresponding hash set using the same implementation and
 //! with similar properties.
 //!
 //! ### Highlights
 //!
-//! [`IndexMap`] and [`IndexSet`] are drop-in compatible with the std `HashMap`
+//! [`RingMap`] and [`RingSet`] are nearly drop-in compatible with the std `HashMap`
 //! and `HashSet`, but they also have some features of note:
 //!
 //! - The ordering semantics (see their documentation for details)
-//! - Sorting methods and the [`.pop()`][IndexMap::pop] methods.
+//! - Sorting methods and the [`.pop_back()`][RingMap::pop_back] and
+//!   [`.pop_front()`][RingMap::pop_front] methods.
 //! - The [`Equivalent`] trait, which offers more flexible equality definitions
 //!   between borrowed and owned versions of keys.
 //! - The [`MutableKeys`][map::MutableKeys] trait, which gives opt-in mutable
@@ -32,19 +34,16 @@
 //!   information see the section on [`no_std`].
 //! * `rayon`: Enables parallel iteration and other parallel methods.
 //! * `serde`: Adds implementations for [`Serialize`] and [`Deserialize`]
-//!   to [`IndexMap`] and [`IndexSet`]. Alternative implementations for
-//!   (de)serializing [`IndexMap`] as an ordered sequence are available in the
+//!   to [`RingMap`] and [`RingSet`]. Alternative implementations for
+//!   (de)serializing [`RingMap`] as an ordered sequence are available in the
 //!   [`map::serde_seq`] module.
 //! * `borsh`: Adds implementations for [`BorshSerialize`] and [`BorshDeserialize`]
-//!   to [`IndexMap`] and [`IndexSet`]. **Note:** When this feature is enabled,
-//!   you cannot enable the `derive` feature of [`borsh`] due to a cyclic
-//!   dependency. Instead, add the `borsh-derive` crate as an explicit
-//!   dependency in your Cargo.toml and import as e.g.
+//!   to [`RingMap`] and [`RingSet`].
 //!   `use borsh_derive::{BorshSerialize, BorshDeserialize};`.
 //! * `arbitrary`: Adds implementations for the [`arbitrary::Arbitrary`] trait
-//!   to [`IndexMap`] and [`IndexSet`].
+//!   to [`RingMap`] and [`RingSet`].
 //! * `quickcheck`: Adds implementations for the [`quickcheck::Arbitrary`] trait
-//!   to [`IndexMap`] and [`IndexSet`].
+//!   to [`RingMap`] and [`RingSet`].
 //!
 //! _Note: only the `std` feature is enabled by default._
 //!
@@ -54,13 +53,12 @@
 //! [`Deserialize`]: `::serde::Deserialize`
 //! [`BorshSerialize`]: `::borsh::BorshSerialize`
 //! [`BorshDeserialize`]: `::borsh::BorshDeserialize`
-//! [`borsh`]: `::borsh`
 //! [`arbitrary::Arbitrary`]: `::arbitrary::Arbitrary`
 //! [`quickcheck::Arbitrary`]: `::quickcheck::Arbitrary`
 //!
 //! ### Alternate Hashers
 //!
-//! [`IndexMap`] and [`IndexSet`] have a default hasher type
+//! [`RingMap`] and [`RingSet`] have a default hasher type
 //! [`S = RandomState`][std::collections::hash_map::RandomState],
 //! just like the standard `HashMap` and `HashSet`, which is resistant to
 //! HashDoS attacks but not the most performant. Type aliases can make it easier
@@ -68,22 +66,22 @@
 //!
 //! ```
 //! use fnv::FnvBuildHasher;
-//! use indexmap::{IndexMap, IndexSet};
+//! use ringmap::{RingMap, RingSet};
 //!
-//! type FnvIndexMap<K, V> = IndexMap<K, V, FnvBuildHasher>;
-//! type FnvIndexSet<T> = IndexSet<T, FnvBuildHasher>;
+//! type FnvRingMap<K, V> = RingMap<K, V, FnvBuildHasher>;
+//! type FnvRingSet<T> = RingSet<T, FnvBuildHasher>;
 //!
-//! let std: IndexSet<i32> = (0..100).collect();
-//! let fnv: FnvIndexSet<i32> = (0..100).collect();
+//! let std: RingSet<i32> = (0..100).collect();
+//! let fnv: FnvRingSet<i32> = (0..100).collect();
 //! assert_eq!(std, fnv);
 //! ```
 //!
 //! ### Rust Version
 //!
-//! This version of indexmap requires Rust 1.63 or later.
+//! This version of ringmap requires Rust 1.68 or later.
 //!
-//! The indexmap 2.x release series will use a carefully considered version
-//! upgrade policy, where in a later 2.x version, we will raise the minimum
+//! The ringmap 0.1 release series will use a carefully considered version
+//! upgrade policy, where in a later 0.x version, we will raise the minimum
 //! required Rust version.
 //!
 //! ## No Standard Library Targets
@@ -92,13 +90,13 @@
 //! This is chosen by disabling the default "std" cargo feature, by adding
 //! `default-features = false` to your dependency specification.
 //!
-//! - Creating maps and sets using [`new`][IndexMap::new] and
-//!   [`with_capacity`][IndexMap::with_capacity] is unavailable without `std`.
-//!   Use methods [`IndexMap::default`], [`with_hasher`][IndexMap::with_hasher],
-//!   [`with_capacity_and_hasher`][IndexMap::with_capacity_and_hasher] instead.
+//! - Creating maps and sets using [`new`][RingMap::new] and
+//!   [`with_capacity`][RingMap::with_capacity] is unavailable without `std`.
+//!   Use methods [`RingMap::default`], [`with_hasher`][RingMap::with_hasher],
+//!   [`with_capacity_and_hasher`][RingMap::with_capacity_and_hasher] instead.
 //!   A no-std compatible hasher will be needed as well, for example
 //!   from the crate `twox-hash`.
-//! - Macros [`indexmap!`] and [`indexset!`] are unavailable without `std`.
+//! - Macros [`ringmap!`] and [`ringset!`] are unavailable without `std`.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
@@ -108,7 +106,7 @@ extern crate alloc;
 #[macro_use]
 extern crate std;
 
-use alloc::vec::{self, Vec};
+use alloc::collections::vec_deque::{self, VecDeque};
 
 mod arbitrary;
 #[macro_use]
@@ -127,11 +125,8 @@ pub mod set;
 #[cfg(feature = "rayon")]
 mod rayon;
 
-#[cfg(feature = "rustc-rayon")]
-mod rustc;
-
-pub use crate::map::IndexMap;
-pub use crate::set::IndexSet;
+pub use crate::map::RingMap;
+pub use crate::set::RingSet;
 pub use equivalent::Equivalent;
 
 // shared private items
@@ -208,15 +203,15 @@ impl<K, V> Bucket<K, V> {
 
 trait Entries {
     type Entry;
-    fn into_entries(self) -> Vec<Self::Entry>;
-    fn as_entries(&self) -> &[Self::Entry];
-    fn as_entries_mut(&mut self) -> &mut [Self::Entry];
-    fn with_entries<F>(&mut self, f: F)
+    fn into_entries(self) -> VecDeque<Self::Entry>;
+    fn as_entries(&self) -> &VecDeque<Self::Entry>;
+    fn as_entries_mut(&mut self) -> &mut VecDeque<Self::Entry>;
+    fn with_contiguous_entries<F>(&mut self, f: F)
     where
         F: FnOnce(&mut [Self::Entry]);
 }
 
-/// The error type for [`try_reserve`][IndexMap::try_reserve] methods.
+/// The error type for [`try_reserve`][RingMap::try_reserve] methods.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TryReserveError {
     kind: TryReserveErrorKind,

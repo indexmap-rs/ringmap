@@ -1,5 +1,5 @@
-use indexmap::indexmap;
-use indexmap::Equivalent;
+use ringmap::ringmap;
+use ringmap::Equivalent;
 
 use std::hash::Hash;
 
@@ -30,7 +30,7 @@ where
 #[test]
 fn test_lookup() {
     let s = String::from;
-    let map = indexmap! {
+    let map = ringmap! {
         (s("a"), s("b")) => 1,
         (s("a"), s("x")) => 2,
     };
@@ -42,12 +42,12 @@ fn test_lookup() {
 #[test]
 fn test_string_str() {
     let s = String::from;
-    let mut map = indexmap! {
+    let mut map = ringmap! {
         s("a") => 1, s("b") => 2,
         s("x") => 3, s("y") => 4,
     };
 
     assert!(map.contains_key("a"));
     assert!(!map.contains_key("z"));
-    assert_eq!(map.swap_remove("b"), Some(2));
+    assert_eq!(map.swap_remove_back("b"), Some(2));
 }

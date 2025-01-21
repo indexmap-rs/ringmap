@@ -1,11 +1,10 @@
 use core::hash::{BuildHasher, Hash};
 
 use super::{
-    Bucket, Entries, Entry, Equivalent, IndexMap, IndexedEntry, IterMut2, OccupiedEntry,
-    VacantEntry,
+    Bucket, Entries, Entry, Equivalent, IndexedEntry, IterMut2, OccupiedEntry, RingMap, VacantEntry,
 };
 
-/// Opt-in mutable access to [`IndexMap`] keys.
+/// Opt-in mutable access to [`RingMap`] keys.
 ///
 /// These methods expose `&mut K`, mutable references to the key as it is stored
 /// in the map.
@@ -16,7 +15,7 @@ use super::{
 /// This is sound (memory safe) but a logical error hazard (just like
 /// implementing `PartialEq`, `Eq`, or `Hash` incorrectly would be).
 ///
-/// `use` this trait to enable its methods for `IndexMap`.
+/// `use` this trait to enable its methods for `RingMap`.
 ///
 /// This trait is sealed and cannot be implemented for types outside this crate.
 pub trait MutableKeys: private::Sealed {
@@ -52,10 +51,10 @@ pub trait MutableKeys: private::Sealed {
         F: FnMut(&mut Self::Key, &mut Self::Value) -> bool;
 }
 
-/// Opt-in mutable access to [`IndexMap`] keys.
+/// Opt-in mutable access to [`RingMap`] keys.
 ///
 /// See [`MutableKeys`] for more information.
-impl<K, V, S> MutableKeys for IndexMap<K, V, S>
+impl<K, V, S> MutableKeys for RingMap<K, V, S>
 where
     S: BuildHasher,
 {
@@ -158,7 +157,7 @@ impl<K, V> MutableEntryKey for IndexedEntry<'_, K, V> {
 mod private {
     pub trait Sealed {}
 
-    impl<K, V, S> Sealed for super::IndexMap<K, V, S> {}
+    impl<K, V, S> Sealed for super::RingMap<K, V, S> {}
     impl<K, V> Sealed for super::Entry<'_, K, V> {}
     impl<K, V> Sealed for super::OccupiedEntry<'_, K, V> {}
     impl<K, V> Sealed for super::VacantEntry<'_, K, V> {}

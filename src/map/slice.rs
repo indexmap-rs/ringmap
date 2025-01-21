@@ -1,22 +1,19 @@
-use super::{
-    Bucket, Entries, IndexMap, IntoIter, IntoKeys, IntoValues, Iter, IterMut, Keys, Values,
-    ValuesMut,
-};
+use super::{Bucket, IntoIter, IntoKeys, IntoValues, Iter, IterMut, Keys, Values, ValuesMut};
 use crate::util::try_simplify_range;
 
 use alloc::boxed::Box;
-use alloc::vec::Vec;
+use alloc::collections::VecDeque;
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{Hash, Hasher};
 use core::ops::{self, Bound, Index, IndexMut, RangeBounds};
 
-/// A dynamically-sized slice of key-value pairs in an [`IndexMap`].
+/// A dynamically-sized slice of key-value pairs in an [`RingMap`][super::RingMap].
 ///
 /// This supports indexed operations much like a `[(K, V)]` slice,
 /// but not any hashed operations on the map keys.
 ///
-/// Unlike `IndexMap`, `Slice` does consider the order for [`PartialEq`]
+/// Unlike `RingMap`, `Slice` does consider the order for [`PartialEq`]
 /// and [`Eq`], and it also implements [`PartialOrd`], [`Ord`], and [`Hash`].
 #[repr(transparent)]
 pub struct Slice<K, V> {
@@ -45,8 +42,8 @@ impl<K, V> Slice<K, V> {
 }
 
 impl<K, V> Slice<K, V> {
-    pub(crate) fn into_entries(self: Box<Self>) -> Vec<Bucket<K, V>> {
-        self.into_boxed().into_vec()
+    pub(crate) fn into_entries(self: Box<Self>) -> VecDeque<Bucket<K, V>> {
+        self.into_boxed().into_vec().into()
     }
 
     /// Returns an empty slice.
@@ -179,17 +176,17 @@ impl<K, V> Slice<K, V> {
 
     /// Return an iterator over the key-value pairs of the map slice.
     pub fn iter(&self) -> Iter<'_, K, V> {
-        Iter::new(&self.entries)
+        Iter::from_slices((&self.entries, &[]))
     }
 
     /// Return an iterator over the key-value pairs of the map slice.
     pub fn iter_mut(&mut self) -> IterMut<'_, K, V> {
-        IterMut::new(&mut self.entries)
+        IterMut::from_mut_slices((&mut self.entries, &mut []))
     }
 
     /// Return an iterator over the keys of the map slice.
     pub fn keys(&self) -> Keys<'_, K, V> {
-        Keys::new(&self.entries)
+        Keys::from_slices((&self.entries, &[]))
     }
 
     /// Return an owning iterator over the keys of the map slice.
@@ -199,12 +196,12 @@ impl<K, V> Slice<K, V> {
 
     /// Return an iterator over the values of the map slice.
     pub fn values(&self) -> Values<'_, K, V> {
-        Values::new(&self.entries)
+        Values::from_slices((&self.entries, &[]))
     }
 
     /// Return an iterator over mutable references to the the values of the map slice.
     pub fn values_mut(&mut self) -> ValuesMut<'_, K, V> {
-        ValuesMut::new(&mut self.entries)
+        ValuesMut::from_mut_slices((&mut self.entries, &mut []))
     }
 
     /// Return an owning iterator over the values of the map slice.
@@ -218,8 +215,8 @@ impl<K, V> Slice<K, V> {
     /// maintain the sort. See [`slice::binary_search`] for more details.
     ///
     /// Computes in **O(log(n))** time, which is notably less scalable than looking the key up in
-    /// the map this is a slice from using [`IndexMap::get_index_of`], but this can also position
-    /// missing keys.
+    /// the map this is a slice from using [`RingMap::get_index_of`][super::RingMap::get_index_of],
+    /// but this can also position missing keys.
     pub fn binary_search_keys(&self, x: &K) -> Result<usize, usize>
     where
         K: Ord,
@@ -384,20 +381,6 @@ impl<K, V> IndexMut<usize> for Slice<K, V> {
 // Instead, we repeat the implementations for all the core range types.
 macro_rules! impl_index {
     ($($range:ty),*) => {$(
-        impl<K, V, S> Index<$range> for IndexMap<K, V, S> {
-            type Output = Slice<K, V>;
-
-            fn index(&self, range: $range) -> &Self::Output {
-                Slice::from_slice(&self.as_entries()[range])
-            }
-        }
-
-        impl<K, V, S> IndexMut<$range> for IndexMap<K, V, S> {
-            fn index_mut(&mut self, range: $range) -> &mut Self::Output {
-                Slice::from_mut_slice(&mut self.as_entries_mut()[range])
-            }
-        }
-
         impl<K, V> Index<$range> for Slice<K, V> {
             type Output = Slice<K, V>;
 
@@ -426,15 +409,12 @@ impl_index!(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RingMap;
+    use alloc::vec::Vec;
 
     #[test]
     fn slice_index() {
-        fn check(
-            vec_slice: &[(i32, i32)],
-            map_slice: &Slice<i32, i32>,
-            sub_slice: &Slice<i32, i32>,
-        ) {
-            assert_eq!(map_slice as *const _, sub_slice as *const _);
+        fn check(vec_slice: &[(i32, i32)], map_slice: &Slice<i32, i32>) {
             itertools::assert_equal(
                 vec_slice.iter().copied(),
                 map_slice.iter().map(|(&k, &v)| (k, v)),
@@ -444,11 +424,12 @@ mod tests {
         }
 
         let vec: Vec<(i32, i32)> = (0..10).map(|i| (i, i * i)).collect();
-        let map: IndexMap<i32, i32> = vec.iter().cloned().collect();
-        let slice = map.as_slice();
+        let map: RingMap<i32, i32> = vec.iter().cloned().collect();
+        let (slice, tail) = map.as_slices();
+        assert!(tail.is_empty());
 
         // RangeFull
-        check(&vec[..], &map[..], &slice[..]);
+        check(&vec[..], &slice[..]);
 
         for i in 0usize..10 {
             // Index
@@ -458,38 +439,33 @@ mod tests {
             assert_eq!(map[&(i as i32)], slice[i]);
 
             // RangeFrom
-            check(&vec[i..], &map[i..], &slice[i..]);
+            check(&vec[i..], &slice[i..]);
 
             // RangeTo
-            check(&vec[..i], &map[..i], &slice[..i]);
+            check(&vec[..i], &slice[..i]);
 
             // RangeToInclusive
-            check(&vec[..=i], &map[..=i], &slice[..=i]);
+            check(&vec[..=i], &slice[..=i]);
 
             // (Bound<usize>, Bound<usize>)
             let bounds = (Bound::Excluded(i), Bound::Unbounded);
-            check(&vec[i + 1..], &map[bounds], &slice[bounds]);
+            check(&vec[i + 1..], &slice[bounds]);
 
             for j in i..=10 {
                 // Range
-                check(&vec[i..j], &map[i..j], &slice[i..j]);
+                check(&vec[i..j], &slice[i..j]);
             }
 
             for j in i..10 {
                 // RangeInclusive
-                check(&vec[i..=j], &map[i..=j], &slice[i..=j]);
+                check(&vec[i..=j], &slice[i..=j]);
             }
         }
     }
 
     #[test]
     fn slice_index_mut() {
-        fn check_mut(
-            vec_slice: &[(i32, i32)],
-            map_slice: &mut Slice<i32, i32>,
-            sub_slice: &mut Slice<i32, i32>,
-        ) {
-            assert_eq!(map_slice, sub_slice);
+        fn check_mut(vec_slice: &[(i32, i32)], map_slice: &mut Slice<i32, i32>) {
             itertools::assert_equal(
                 vec_slice.iter().copied(),
                 map_slice.iter_mut().map(|(&k, &mut v)| (k, v)),
@@ -501,38 +477,39 @@ mod tests {
         }
 
         let vec: Vec<(i32, i32)> = (0..10).map(|i| (i, i * i)).collect();
-        let mut map: IndexMap<i32, i32> = vec.iter().cloned().collect();
+        let mut map: RingMap<i32, i32> = vec.iter().cloned().collect();
         let mut map2 = map.clone();
-        let slice = map2.as_mut_slice();
+        let (slice, tail) = map2.as_mut_slices();
+        assert!(tail.is_empty());
 
         // RangeFull
-        check_mut(&vec[..], &mut map[..], &mut slice[..]);
+        check_mut(&vec[..], &mut slice[..]);
 
         for i in 0usize..10 {
             // IndexMut
             assert_eq!(&mut map[i], &mut slice[i]);
 
             // RangeFrom
-            check_mut(&vec[i..], &mut map[i..], &mut slice[i..]);
+            check_mut(&vec[i..], &mut slice[i..]);
 
             // RangeTo
-            check_mut(&vec[..i], &mut map[..i], &mut slice[..i]);
+            check_mut(&vec[..i], &mut slice[..i]);
 
             // RangeToInclusive
-            check_mut(&vec[..=i], &mut map[..=i], &mut slice[..=i]);
+            check_mut(&vec[..=i], &mut slice[..=i]);
 
             // (Bound<usize>, Bound<usize>)
             let bounds = (Bound::Excluded(i), Bound::Unbounded);
-            check_mut(&vec[i + 1..], &mut map[bounds], &mut slice[bounds]);
+            check_mut(&vec[i + 1..], &mut slice[bounds]);
 
             for j in i..=10 {
                 // Range
-                check_mut(&vec[i..j], &mut map[i..j], &mut slice[i..j]);
+                check_mut(&vec[i..j], &mut slice[i..j]);
             }
 
             for j in i..10 {
                 // RangeInclusive
-                check_mut(&vec[i..=j], &mut map[i..=j], &mut slice[i..=j]);
+                check_mut(&vec[i..=j], &mut slice[i..=j]);
             }
         }
     }

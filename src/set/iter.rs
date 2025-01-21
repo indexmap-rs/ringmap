@@ -1,13 +1,13 @@
-use super::{Bucket, Entries, IndexSet, Slice};
+use super::{Bucket, Entries, RingSet};
+use crate::map::Buckets;
 
-use alloc::vec::{self, Vec};
+use alloc::collections::vec_deque::{self, VecDeque};
 use core::fmt;
 use core::hash::{BuildHasher, Hash};
 use core::iter::{Chain, FusedIterator};
 use core::ops::RangeBounds;
-use core::slice::Iter as SliceIter;
 
-impl<'a, T, S> IntoIterator for &'a IndexSet<T, S> {
+impl<'a, T, S> IntoIterator for &'a RingSet<T, S> {
     type Item = &'a T;
     type IntoIter = Iter<'a, T>;
 
@@ -16,7 +16,7 @@ impl<'a, T, S> IntoIterator for &'a IndexSet<T, S> {
     }
 }
 
-impl<T, S> IntoIterator for IndexSet<T, S> {
+impl<T, S> IntoIterator for RingSet<T, S> {
     type Item = T;
     type IntoIter = IntoIter<T>;
 
@@ -25,24 +25,25 @@ impl<T, S> IntoIterator for IndexSet<T, S> {
     }
 }
 
-/// An iterator over the items of an [`IndexSet`].
+/// An iterator over the items of an [`RingSet`].
 ///
-/// This `struct` is created by the [`IndexSet::iter`] method.
+/// This `struct` is created by the [`RingSet::iter`] method.
 /// See its documentation for more.
 pub struct Iter<'a, T> {
-    iter: SliceIter<'a, Bucket<T>>,
+    iter: Buckets<'a, T, ()>,
 }
 
 impl<'a, T> Iter<'a, T> {
-    pub(super) fn new(entries: &'a [Bucket<T>]) -> Self {
+    pub(super) fn new(entries: &'a VecDeque<Bucket<T>>) -> Self {
         Self {
-            iter: entries.iter(),
+            iter: Buckets::new(entries),
         }
     }
 
-    /// Returns a slice of the remaining entries in the iterator.
-    pub fn as_slice(&self) -> &'a Slice<T> {
-        Slice::from_slice(self.iter.as_slice())
+    pub(super) fn from_slices(slices: (&'a [Bucket<T>], &'a [Bucket<T>])) -> Self {
+        Self {
+            iter: Buckets::from_slices(slices),
+        }
     }
 }
 
@@ -80,29 +81,26 @@ impl<T: fmt::Debug> fmt::Debug for Iter<'_, T> {
 
 impl<T> Default for Iter<'_, T> {
     fn default() -> Self {
-        Self { iter: [].iter() }
+        Self {
+            iter: Default::default(),
+        }
     }
 }
 
-/// An owning iterator over the items of an [`IndexSet`].
+/// An owning iterator over the items of an [`RingSet`].
 ///
-/// This `struct` is created by the [`IndexSet::into_iter`] method
+/// This `struct` is created by the [`RingSet::into_iter`] method
 /// (provided by the [`IntoIterator`] trait). See its documentation for more.
 #[derive(Clone)]
 pub struct IntoIter<T> {
-    iter: vec::IntoIter<Bucket<T>>,
+    iter: vec_deque::IntoIter<Bucket<T>>,
 }
 
 impl<T> IntoIter<T> {
-    pub(super) fn new(entries: Vec<Bucket<T>>) -> Self {
+    pub(super) fn new(entries: VecDeque<Bucket<T>>) -> Self {
         Self {
             iter: entries.into_iter(),
         }
-    }
-
-    /// Returns a slice of the remaining entries in the iterator.
-    pub fn as_slice(&self) -> &Slice<T> {
-        Slice::from_slice(self.iter.as_slice())
     }
 }
 
@@ -126,35 +124,32 @@ impl<T> FusedIterator for IntoIter<T> {}
 
 impl<T: fmt::Debug> fmt::Debug for IntoIter<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let iter = self.iter.as_slice().iter().map(Bucket::key_ref);
-        f.debug_list().entries(iter).finish()
+        // FIXME
+        // let iter = self.iter.as_slice().iter().map(Bucket::key_ref);
+        // f.debug_list().entries(iter).finish()
+        f.debug_struct("IntoIter").finish_non_exhaustive()
     }
 }
 
 impl<T> Default for IntoIter<T> {
     fn default() -> Self {
         Self {
-            iter: Vec::new().into_iter(),
+            iter: VecDeque::new().into_iter(),
         }
     }
 }
 
-/// A draining iterator over the items of an [`IndexSet`].
+/// A draining iterator over the items of an [`RingSet`].
 ///
-/// This `struct` is created by the [`IndexSet::drain`] method.
+/// This `struct` is created by the [`RingSet::drain`] method.
 /// See its documentation for more.
 pub struct Drain<'a, T> {
-    iter: vec::Drain<'a, Bucket<T>>,
+    iter: vec_deque::Drain<'a, Bucket<T>>,
 }
 
 impl<'a, T> Drain<'a, T> {
-    pub(super) fn new(iter: vec::Drain<'a, Bucket<T>>) -> Self {
+    pub(super) fn new(iter: vec_deque::Drain<'a, Bucket<T>>) -> Self {
         Self { iter }
-    }
-
-    /// Returns a slice of the remaining entries in the iterator.
-    pub fn as_slice(&self) -> &Slice<T> {
-        Slice::from_slice(self.iter.as_slice())
     }
 }
 
@@ -178,22 +173,24 @@ impl<T> FusedIterator for Drain<'_, T> {}
 
 impl<T: fmt::Debug> fmt::Debug for Drain<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let iter = self.iter.as_slice().iter().map(Bucket::key_ref);
-        f.debug_list().entries(iter).finish()
+        // FIXME
+        // let iter = self.iter.as_slice().iter().map(Bucket::key_ref);
+        // f.debug_list().entries(iter).finish()
+        f.debug_struct("Drain").finish_non_exhaustive()
     }
 }
 
-/// A lazy iterator producing elements in the difference of [`IndexSet`]s.
+/// A lazy iterator producing elements in the difference of [`RingSet`]s.
 ///
-/// This `struct` is created by the [`IndexSet::difference`] method.
+/// This `struct` is created by the [`RingSet::difference`] method.
 /// See its documentation for more.
 pub struct Difference<'a, T, S> {
     iter: Iter<'a, T>,
-    other: &'a IndexSet<T, S>,
+    other: &'a RingSet<T, S>,
 }
 
 impl<'a, T, S> Difference<'a, T, S> {
-    pub(super) fn new<S1>(set: &'a IndexSet<T, S1>, other: &'a IndexSet<T, S>) -> Self {
+    pub(super) fn new<S1>(set: &'a RingSet<T, S1>, other: &'a RingSet<T, S>) -> Self {
         Self {
             iter: set.iter(),
             other,
@@ -263,17 +260,17 @@ where
     }
 }
 
-/// A lazy iterator producing elements in the intersection of [`IndexSet`]s.
+/// A lazy iterator producing elements in the intersection of [`RingSet`]s.
 ///
-/// This `struct` is created by the [`IndexSet::intersection`] method.
+/// This `struct` is created by the [`RingSet::intersection`] method.
 /// See its documentation for more.
 pub struct Intersection<'a, T, S> {
     iter: Iter<'a, T>,
-    other: &'a IndexSet<T, S>,
+    other: &'a RingSet<T, S>,
 }
 
 impl<'a, T, S> Intersection<'a, T, S> {
-    pub(super) fn new<S1>(set: &'a IndexSet<T, S1>, other: &'a IndexSet<T, S>) -> Self {
+    pub(super) fn new<S1>(set: &'a RingSet<T, S1>, other: &'a RingSet<T, S>) -> Self {
         Self {
             iter: set.iter(),
             other,
@@ -343,9 +340,9 @@ where
     }
 }
 
-/// A lazy iterator producing elements in the symmetric difference of [`IndexSet`]s.
+/// A lazy iterator producing elements in the symmetric difference of [`RingSet`]s.
 ///
-/// This `struct` is created by the [`IndexSet::symmetric_difference`] method.
+/// This `struct` is created by the [`RingSet::symmetric_difference`] method.
 /// See its documentation for more.
 pub struct SymmetricDifference<'a, T, S1, S2> {
     iter: Chain<Difference<'a, T, S2>, Difference<'a, T, S1>>,
@@ -357,7 +354,7 @@ where
     S1: BuildHasher,
     S2: BuildHasher,
 {
-    pub(super) fn new(set1: &'a IndexSet<T, S1>, set2: &'a IndexSet<T, S2>) -> Self {
+    pub(super) fn new(set1: &'a RingSet<T, S1>, set2: &'a RingSet<T, S2>) -> Self {
         let diff1 = set1.difference(set2);
         let diff2 = set2.difference(set1);
         Self {
@@ -435,9 +432,9 @@ where
     }
 }
 
-/// A lazy iterator producing elements in the union of [`IndexSet`]s.
+/// A lazy iterator producing elements in the union of [`RingSet`]s.
 ///
-/// This `struct` is created by the [`IndexSet::union`] method.
+/// This `struct` is created by the [`RingSet::union`] method.
 /// See its documentation for more.
 pub struct Union<'a, T, S> {
     iter: Chain<Iter<'a, T>, Difference<'a, T, S>>,
@@ -448,7 +445,7 @@ where
     T: Eq + Hash,
     S: BuildHasher,
 {
-    pub(super) fn new<S2>(set1: &'a IndexSet<T, S>, set2: &'a IndexSet<T, S2>) -> Self
+    pub(super) fn new<S2>(set1: &'a RingSet<T, S>, set2: &'a RingSet<T, S2>) -> Self
     where
         S2: BuildHasher,
     {
@@ -523,9 +520,9 @@ where
     }
 }
 
-/// A splicing iterator for `IndexSet`.
+/// A splicing iterator for `RingSet`.
 ///
-/// This `struct` is created by [`IndexSet::splice()`].
+/// This `struct` is created by [`RingSet::splice()`].
 /// See its documentation for more.
 pub struct Splice<'a, I, T, S>
 where
@@ -543,7 +540,7 @@ where
     S: BuildHasher,
 {
     #[track_caller]
-    pub(super) fn new<R>(set: &'a mut IndexSet<T, S>, range: R, replace_with: I) -> Self
+    pub(super) fn new<R>(set: &'a mut RingSet<T, S>, range: R, replace_with: I) -> Self
     where
         R: RangeBounds<usize>,
     {

@@ -1,14 +1,16 @@
-//! Parallel iterator types for [`IndexSet`] with [rayon][::rayon].
+//! Parallel iterator types for [`RingSet`] with [rayon][::rayon].
 //!
 //! You will rarely need to interact with this module directly unless you need to name one of the
 //! iterator types.
 
 use super::collect;
+use super::map::ParBuckets;
 use rayon::iter::plumbing::{Consumer, ProducerCallback, UnindexedConsumer};
 use rayon::prelude::*;
 
-use crate::vec::Vec;
 use alloc::boxed::Box;
+use alloc::collections::VecDeque;
+use alloc::vec::Vec;
 use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{BuildHasher, Hash};
@@ -16,11 +18,11 @@ use core::ops::RangeBounds;
 
 use crate::set::Slice;
 use crate::Entries;
-use crate::IndexSet;
+use crate::RingSet;
 
 type Bucket<T> = crate::Bucket<T, ()>;
 
-impl<T, S> IntoParallelIterator for IndexSet<T, S>
+impl<T, S> IntoParallelIterator for RingSet<T, S>
 where
     T: Send,
 {
@@ -48,12 +50,12 @@ where
     }
 }
 
-/// A parallel owning iterator over the items of an [`IndexSet`].
+/// A parallel owning iterator over the items of an [`RingSet`].
 ///
-/// This `struct` is created by the [`IndexSet::into_par_iter`] method
+/// This `struct` is created by the [`RingSet::into_par_iter`] method
 /// (provided by rayon's [`IntoParallelIterator`] trait). See its documentation for more.
 pub struct IntoParIter<T> {
-    entries: Vec<Bucket<T>>,
+    entries: VecDeque<Bucket<T>>,
 }
 
 impl<T: fmt::Debug> fmt::Debug for IntoParIter<T> {
@@ -73,7 +75,7 @@ impl<T: Send> IndexedParallelIterator for IntoParIter<T> {
     indexed_parallel_iterator_methods!(Bucket::key);
 }
 
-impl<'a, T, S> IntoParallelIterator for &'a IndexSet<T, S>
+impl<'a, T, S> IntoParallelIterator for &'a RingSet<T, S>
 where
     T: Sync,
 {
@@ -82,7 +84,7 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         ParIter {
-            entries: self.as_entries(),
+            entries: ParBuckets::new(self.as_entries()),
         }
     }
 }
@@ -96,24 +98,26 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         ParIter {
-            entries: &self.entries,
+            entries: ParBuckets::from_slices((&self.entries, &[])),
         }
     }
 }
 
-/// A parallel iterator over the items of an [`IndexSet`].
+/// A parallel iterator over the items of an [`RingSet`].
 ///
-/// This `struct` is created by the [`IndexSet::par_iter`] method
+/// This `struct` is created by the [`RingSet::par_iter`] method
 /// (provided by rayon's [`IntoParallelRefIterator`] trait). See its documentation for more.
 ///
-/// [`IndexSet::par_iter`]: ../struct.IndexSet.html#method.par_iter
+/// [`RingSet::par_iter`]: ../struct.RingSet.html#method.par_iter
 pub struct ParIter<'a, T> {
-    entries: &'a [Bucket<T>],
+    entries: ParBuckets<'a, T, ()>,
 }
 
 impl<T> Clone for ParIter<'_, T> {
     fn clone(&self) -> Self {
-        ParIter { ..*self }
+        ParIter {
+            entries: self.entries.clone(),
+        }
     }
 }
 
@@ -134,7 +138,7 @@ impl<T: Sync> IndexedParallelIterator for ParIter<'_, T> {
     indexed_parallel_iterator_methods!(Bucket::key_ref);
 }
 
-impl<'a, T, S> ParallelDrainRange<usize> for &'a mut IndexSet<T, S>
+impl<'a, T, S> ParallelDrainRange<usize> for &'a mut RingSet<T, S>
 where
     T: Send,
 {
@@ -148,14 +152,14 @@ where
     }
 }
 
-/// A parallel draining iterator over the items of an [`IndexSet`].
+/// A parallel draining iterator over the items of an [`RingSet`].
 ///
-/// This `struct` is created by the [`IndexSet::par_drain`] method
+/// This `struct` is created by the [`RingSet::par_drain`] method
 /// (provided by rayon's [`ParallelDrainRange`] trait). See its documentation for more.
 ///
-/// [`IndexSet::par_drain`]: ../struct.IndexSet.html#method.par_drain
+/// [`RingSet::par_drain`]: ../struct.RingSet.html#method.par_drain
 pub struct ParDrain<'a, T: Send> {
-    entries: rayon::vec::Drain<'a, Bucket<T>>,
+    entries: rayon::collections::vec_deque::Drain<'a, Bucket<T>>,
 }
 
 impl<T: Send> ParallelIterator for ParDrain<'_, T> {
@@ -168,12 +172,26 @@ impl<T: Send> IndexedParallelIterator for ParDrain<'_, T> {
     indexed_parallel_iterator_methods!(Bucket::key);
 }
 
+impl<T, S> RingSet<T, S>
+where
+    T: PartialEq + Sync,
+{
+    /// Returns `true` if `self` contains all of the same values as `other`,
+    /// in the same indexed order, determined in parallel.
+    pub fn par_eq<S2>(&self, other: &RingSet<T, S2>) -> bool
+    where
+        S2: BuildHasher + Sync,
+    {
+        self.len() == other.len() && self.par_iter().eq(other)
+    }
+}
+
 /// Parallel iterator methods and other parallel methods.
 ///
 /// The following methods **require crate feature `"rayon"`**.
 ///
 /// See also the `IntoParallelIterator` implementations.
-impl<T, S> IndexSet<T, S>
+impl<T, S> RingSet<T, S>
 where
     T: Hash + Eq + Sync,
     S: BuildHasher + Sync,
@@ -184,7 +202,7 @@ where
     /// in the `self` set is still preserved for operations like `reduce` and `collect`.
     pub fn par_difference<'a, S2>(
         &'a self,
-        other: &'a IndexSet<T, S2>,
+        other: &'a RingSet<T, S2>,
     ) -> ParDifference<'a, T, S, S2>
     where
         S2: BuildHasher + Sync,
@@ -204,7 +222,7 @@ where
     /// values from `other` in their original order.
     pub fn par_symmetric_difference<'a, S2>(
         &'a self,
-        other: &'a IndexSet<T, S2>,
+        other: &'a RingSet<T, S2>,
     ) -> ParSymmetricDifference<'a, T, S, S2>
     where
         S2: BuildHasher + Sync,
@@ -221,7 +239,7 @@ where
     /// in the `self` set is still preserved for operations like `reduce` and `collect`.
     pub fn par_intersection<'a, S2>(
         &'a self,
-        other: &'a IndexSet<T, S2>,
+        other: &'a RingSet<T, S2>,
     ) -> ParIntersection<'a, T, S, S2>
     where
         S2: BuildHasher + Sync,
@@ -238,7 +256,7 @@ where
     /// in the sets is still preserved for operations like `reduce` and `collect`.
     /// Values from `self` are produced in their original order, followed by
     /// values that are unique to `other` in their original order.
-    pub fn par_union<'a, S2>(&'a self, other: &'a IndexSet<T, S2>) -> ParUnion<'a, T, S, S2>
+    pub fn par_union<'a, S2>(&'a self, other: &'a RingSet<T, S2>) -> ParUnion<'a, T, S, S2>
     where
         S2: BuildHasher + Sync,
     {
@@ -250,7 +268,7 @@ where
 
     /// Returns `true` if `self` contains all of the same values as `other`,
     /// regardless of each set's indexed order, determined in parallel.
-    pub fn par_eq<S2>(&self, other: &IndexSet<T, S2>) -> bool
+    pub fn par_set_eq<S2>(&self, other: &RingSet<T, S2>) -> bool
     where
         S2: BuildHasher + Sync,
     {
@@ -259,7 +277,7 @@ where
 
     /// Returns `true` if `self` has no elements in common with `other`,
     /// determined in parallel.
-    pub fn par_is_disjoint<S2>(&self, other: &IndexSet<T, S2>) -> bool
+    pub fn par_is_disjoint<S2>(&self, other: &RingSet<T, S2>) -> bool
     where
         S2: BuildHasher + Sync,
     {
@@ -272,7 +290,7 @@ where
 
     /// Returns `true` if all elements of `other` are contained in `self`,
     /// determined in parallel.
-    pub fn par_is_superset<S2>(&self, other: &IndexSet<T, S2>) -> bool
+    pub fn par_is_superset<S2>(&self, other: &RingSet<T, S2>) -> bool
     where
         S2: BuildHasher + Sync,
     {
@@ -281,7 +299,7 @@ where
 
     /// Returns `true` if all elements of `self` are contained in `other`,
     /// determined in parallel.
-    pub fn par_is_subset<S2>(&self, other: &IndexSet<T, S2>) -> bool
+    pub fn par_is_subset<S2>(&self, other: &RingSet<T, S2>) -> bool
     where
         S2: BuildHasher + Sync,
     {
@@ -289,13 +307,13 @@ where
     }
 }
 
-/// A parallel iterator producing elements in the difference of [`IndexSet`]s.
+/// A parallel iterator producing elements in the difference of [`RingSet`]s.
 ///
-/// This `struct` is created by the [`IndexSet::par_difference`] method.
+/// This `struct` is created by the [`RingSet::par_difference`] method.
 /// See its documentation for more.
 pub struct ParDifference<'a, T, S1, S2> {
-    set1: &'a IndexSet<T, S1>,
-    set2: &'a IndexSet<T, S2>,
+    set1: &'a RingSet<T, S1>,
+    set2: &'a RingSet<T, S2>,
 }
 
 impl<T, S1, S2> Clone for ParDifference<'_, T, S1, S2> {
@@ -337,13 +355,13 @@ where
     }
 }
 
-/// A parallel iterator producing elements in the intersection of [`IndexSet`]s.
+/// A parallel iterator producing elements in the intersection of [`RingSet`]s.
 ///
-/// This `struct` is created by the [`IndexSet::par_intersection`] method.
+/// This `struct` is created by the [`RingSet::par_intersection`] method.
 /// See its documentation for more.
 pub struct ParIntersection<'a, T, S1, S2> {
-    set1: &'a IndexSet<T, S1>,
-    set2: &'a IndexSet<T, S2>,
+    set1: &'a RingSet<T, S1>,
+    set2: &'a RingSet<T, S2>,
 }
 
 impl<T, S1, S2> Clone for ParIntersection<'_, T, S1, S2> {
@@ -385,13 +403,13 @@ where
     }
 }
 
-/// A parallel iterator producing elements in the symmetric difference of [`IndexSet`]s.
+/// A parallel iterator producing elements in the symmetric difference of [`RingSet`]s.
 ///
-/// This `struct` is created by the [`IndexSet::par_symmetric_difference`] method.
+/// This `struct` is created by the [`RingSet::par_symmetric_difference`] method.
 /// See its documentation for more.
 pub struct ParSymmetricDifference<'a, T, S1, S2> {
-    set1: &'a IndexSet<T, S1>,
-    set2: &'a IndexSet<T, S2>,
+    set1: &'a RingSet<T, S1>,
+    set2: &'a RingSet<T, S2>,
 }
 
 impl<T, S1, S2> Clone for ParSymmetricDifference<'_, T, S1, S2> {
@@ -433,13 +451,13 @@ where
     }
 }
 
-/// A parallel iterator producing elements in the union of [`IndexSet`]s.
+/// A parallel iterator producing elements in the union of [`RingSet`]s.
 ///
-/// This `struct` is created by the [`IndexSet::par_union`] method.
+/// This `struct` is created by the [`RingSet::par_union`] method.
 /// See its documentation for more.
 pub struct ParUnion<'a, T, S1, S2> {
-    set1: &'a IndexSet<T, S1>,
-    set2: &'a IndexSet<T, S2>,
+    set1: &'a RingSet<T, S1>,
+    set2: &'a RingSet<T, S2>,
 }
 
 impl<T, S1, S2> Clone for ParUnion<'_, T, S1, S2> {
@@ -482,7 +500,7 @@ where
 /// Parallel sorting methods.
 ///
 /// The following methods **require crate feature `"rayon"`**.
-impl<T, S> IndexSet<T, S>
+impl<T, S> RingSet<T, S>
 where
     T: Send,
 {
@@ -491,7 +509,7 @@ where
     where
         T: Ord,
     {
-        self.with_entries(|entries| {
+        self.with_contiguous_entries(|entries| {
             entries.par_sort_by(|a, b| T::cmp(&a.key, &b.key));
         });
     }
@@ -501,7 +519,7 @@ where
     where
         F: Fn(&T, &T) -> Ordering + Sync,
     {
-        self.with_entries(|entries| {
+        self.with_contiguous_entries(|entries| {
             entries.par_sort_by(move |a, b| cmp(&a.key, &b.key));
         });
     }
@@ -513,7 +531,9 @@ where
         F: Fn(&T, &T) -> Ordering + Sync,
     {
         let mut entries = self.into_entries();
-        entries.par_sort_by(move |a, b| cmp(&a.key, &b.key));
+        entries
+            .make_contiguous()
+            .par_sort_by(move |a, b| cmp(&a.key, &b.key));
         IntoParIter { entries }
     }
 
@@ -522,7 +542,7 @@ where
     where
         T: Ord,
     {
-        self.with_entries(|entries| {
+        self.with_contiguous_entries(|entries| {
             entries.par_sort_unstable_by(|a, b| T::cmp(&a.key, &b.key));
         });
     }
@@ -532,7 +552,7 @@ where
     where
         F: Fn(&T, &T) -> Ordering + Sync,
     {
-        self.with_entries(|entries| {
+        self.with_contiguous_entries(|entries| {
             entries.par_sort_unstable_by(move |a, b| cmp(&a.key, &b.key));
         });
     }
@@ -544,7 +564,9 @@ where
         F: Fn(&T, &T) -> Ordering + Sync,
     {
         let mut entries = self.into_entries();
-        entries.par_sort_unstable_by(move |a, b| cmp(&a.key, &b.key));
+        entries
+            .make_contiguous()
+            .par_sort_unstable_by(move |a, b| cmp(&a.key, &b.key));
         IntoParIter { entries }
     }
 
@@ -554,13 +576,13 @@ where
         K: Ord + Send,
         F: Fn(&T) -> K + Sync,
     {
-        self.with_entries(move |entries| {
+        self.with_contiguous_entries(move |entries| {
             entries.par_sort_by_cached_key(move |a| sort_key(&a.key));
         });
     }
 }
 
-impl<T, S> FromParallelIterator<T> for IndexSet<T, S>
+impl<T, S> FromParallelIterator<T> for RingSet<T, S>
 where
     T: Eq + Hash + Send,
     S: BuildHasher + Default + Send,
@@ -579,7 +601,7 @@ where
     }
 }
 
-impl<T, S> ParallelExtend<T> for IndexSet<T, S>
+impl<T, S> ParallelExtend<T> for RingSet<T, S>
 where
     T: Eq + Hash + Send,
     S: BuildHasher + Send,
@@ -594,7 +616,7 @@ where
     }
 }
 
-impl<'a, T: 'a, S> ParallelExtend<&'a T> for IndexSet<T, S>
+impl<'a, T: 'a, S> ParallelExtend<&'a T> for RingSet<T, S>
 where
     T: Copy + Eq + Hash + Send + Sync,
     S: BuildHasher + Send,
@@ -616,7 +638,7 @@ mod tests {
     #[test]
     fn insert_order() {
         let insert = [0, 4, 2, 12, 8, 7, 11, 5, 3, 17, 19, 22, 23];
-        let mut set = IndexSet::new();
+        let mut set = RingSet::new();
 
         for &elt in &insert {
             set.insert(elt);
@@ -637,24 +659,24 @@ mod tests {
 
     #[test]
     fn partial_eq_and_eq() {
-        let mut set_a = IndexSet::new();
+        let mut set_a = RingSet::new();
         set_a.insert(1);
         set_a.insert(2);
         let mut set_b = set_a.clone();
         assert!(set_a.par_eq(&set_b));
-        set_b.swap_remove(&1);
+        set_b.swap_remove_back(&1);
         assert!(!set_a.par_eq(&set_b));
         set_b.insert(3);
         assert!(!set_a.par_eq(&set_b));
 
-        let set_c: IndexSet<_> = set_b.into_par_iter().collect();
+        let set_c: RingSet<_> = set_b.into_par_iter().collect();
         assert!(!set_a.par_eq(&set_c));
         assert!(!set_c.par_eq(&set_a));
     }
 
     #[test]
     fn extend() {
-        let mut set = IndexSet::new();
+        let mut set = RingSet::new();
         set.par_extend(vec![&1, &2, &3, &4]);
         set.par_extend(vec![5, 6]);
         assert_eq!(
@@ -665,10 +687,10 @@ mod tests {
 
     #[test]
     fn comparisons() {
-        let set_a: IndexSet<_> = (0..3).collect();
-        let set_b: IndexSet<_> = (3..6).collect();
-        let set_c: IndexSet<_> = (0..6).collect();
-        let set_d: IndexSet<_> = (3..9).collect();
+        let set_a: RingSet<_> = (0..3).collect();
+        let set_b: RingSet<_> = (3..6).collect();
+        let set_c: RingSet<_> = (0..6).collect();
+        let set_d: RingSet<_> = (3..9).collect();
 
         assert!(!set_a.par_is_disjoint(&set_a));
         assert!(set_a.par_is_subset(&set_a));
@@ -710,10 +732,10 @@ mod tests {
             assert_eq!(v1, v2);
         }
 
-        let set_a: IndexSet<_> = (0..3).collect();
-        let set_b: IndexSet<_> = (3..6).collect();
-        let set_c: IndexSet<_> = (0..6).collect();
-        let set_d: IndexSet<_> = (3..9).rev().collect();
+        let set_a: RingSet<_> = (0..3).collect();
+        let set_b: RingSet<_> = (3..6).collect();
+        let set_c: RingSet<_> = (0..6).collect();
+        let set_d: RingSet<_> = (3..9).rev().collect();
 
         check(set_a.par_difference(&set_a), empty());
         check(set_a.par_symmetric_difference(&set_a), empty());

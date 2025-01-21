@@ -1,11 +1,11 @@
 #[cfg(feature = "arbitrary")]
 #[cfg_attr(docsrs, doc(cfg(feature = "arbitrary")))]
 mod impl_arbitrary {
-    use crate::{IndexMap, IndexSet};
+    use crate::{RingMap, RingSet};
     use arbitrary::{Arbitrary, Result, Unstructured};
     use core::hash::{BuildHasher, Hash};
 
-    impl<'a, K, V, S> Arbitrary<'a> for IndexMap<K, V, S>
+    impl<'a, K, V, S> Arbitrary<'a> for RingMap<K, V, S>
     where
         K: Arbitrary<'a> + Hash + Eq,
         V: Arbitrary<'a>,
@@ -20,7 +20,7 @@ mod impl_arbitrary {
         }
     }
 
-    impl<'a, T, S> Arbitrary<'a> for IndexSet<T, S>
+    impl<'a, T, S> Arbitrary<'a> for RingSet<T, S>
     where
         T: Arbitrary<'a> + Hash + Eq,
         S: BuildHasher + Default,
@@ -38,13 +38,13 @@ mod impl_arbitrary {
 #[cfg(feature = "quickcheck")]
 #[cfg_attr(docsrs, doc(cfg(feature = "quickcheck")))]
 mod impl_quickcheck {
-    use crate::{IndexMap, IndexSet};
+    use crate::{RingMap, RingSet};
     use alloc::boxed::Box;
     use alloc::vec::Vec;
     use core::hash::{BuildHasher, Hash};
     use quickcheck::{Arbitrary, Gen};
 
-    impl<K, V, S> Arbitrary for IndexMap<K, V, S>
+    impl<K, V, S> Arbitrary for RingMap<K, V, S>
     where
         K: Arbitrary + Hash + Eq,
         V: Arbitrary,
@@ -60,7 +60,7 @@ mod impl_quickcheck {
         }
     }
 
-    impl<T, S> Arbitrary for IndexSet<T, S>
+    impl<T, S> Arbitrary for RingSet<T, S>
     where
         T: Arbitrary + Hash + Eq,
         S: BuildHasher + Default + Clone + 'static,

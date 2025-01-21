@@ -7,10 +7,10 @@
 //! The trait [`RawEntryApiV1`] and the `_v1` suffix on its methods are meant to insulate this for
 //! the future, in case later breaking changes are needed. If the standard library stabilizes its
 //! `hash_raw_entry` feature (or some replacement), matching *inherent* methods will be added to
-//! `IndexMap` without such an opt-in trait.
+//! `RingMap` without such an opt-in trait.
 
-use super::{Entries, RefMut};
-use crate::{Equivalent, HashValue, IndexMap};
+use super::{Entries, OffsetIndex, RefMut};
+use crate::{Equivalent, HashValue, RingMap};
 use core::fmt;
 use core::hash::{BuildHasher, Hash, Hasher};
 use core::marker::PhantomData;
@@ -21,7 +21,7 @@ use hashbrown::hash_table;
 ///
 /// See the [`raw_entry_v1`][self] module documentation for more information.
 pub trait RawEntryApiV1<K, V, S>: private::Sealed {
-    /// Creates a raw immutable entry builder for the [`IndexMap`].
+    /// Creates a raw immutable entry builder for the [`RingMap`].
     ///
     /// Raw entries provide the lowest level of control for searching and
     /// manipulating a map. They must be manually initialized with a hash and
@@ -33,7 +33,7 @@ pub trait RawEntryApiV1<K, V, S>: private::Sealed {
     /// * Using custom comparison logic without newtype wrappers
     ///
     /// Unless you are in such a situation, higher-level and more foolproof APIs like
-    /// [`get`][IndexMap::get] should be preferred.
+    /// [`get`][RingMap::get] should be preferred.
     ///
     /// Immutable raw entries have very limited use; you might instead want
     /// [`raw_entry_mut_v1`][Self::raw_entry_mut_v1].
@@ -42,9 +42,9 @@ pub trait RawEntryApiV1<K, V, S>: private::Sealed {
     ///
     /// ```
     /// use core::hash::{BuildHasher, Hash};
-    /// use indexmap::map::{IndexMap, RawEntryApiV1};
+    /// use ringmap::map::{RingMap, RawEntryApiV1};
     ///
-    /// let mut map = IndexMap::new();
+    /// let mut map = RingMap::new();
     /// map.extend([("a", 100), ("b", 200), ("c", 300)]);
     ///
     /// fn compute_hash<K: Hash + ?Sized, S: BuildHasher>(hash_builder: &S, key: &K) -> u64 {
@@ -72,7 +72,7 @@ pub trait RawEntryApiV1<K, V, S>: private::Sealed {
     /// ```
     fn raw_entry_v1(&self) -> RawEntryBuilder<'_, K, V, S>;
 
-    /// Creates a raw entry builder for the [`IndexMap`].
+    /// Creates a raw entry builder for the [`RingMap`].
     ///
     /// Raw entries provide the lowest level of control for searching and
     /// manipulating a map. They must be manually initialized with a hash and
@@ -87,9 +87,9 @@ pub trait RawEntryApiV1<K, V, S>: private::Sealed {
     /// * Using custom comparison logic without newtype wrappers
     ///
     /// Because raw entries provide much more low-level control, it's much easier
-    /// to put the `IndexMap` into an inconsistent state which, while memory-safe,
+    /// to put the `RingMap` into an inconsistent state which, while memory-safe,
     /// will cause the map to produce seemingly random results. Higher-level and more
-    /// foolproof APIs like [`entry`][IndexMap::entry] should be preferred when possible.
+    /// foolproof APIs like [`entry`][RingMap::entry] should be preferred when possible.
     ///
     /// Raw entries give mutable access to the keys. This must not be used
     /// to modify how the key would compare or hash, as the map will not re-evaluate
@@ -103,10 +103,10 @@ pub trait RawEntryApiV1<K, V, S>: private::Sealed {
     ///
     /// ```
     /// use core::hash::{BuildHasher, Hash};
-    /// use indexmap::map::{IndexMap, RawEntryApiV1};
-    /// use indexmap::map::raw_entry_v1::RawEntryMut;
+    /// use ringmap::map::{RingMap, RawEntryApiV1};
+    /// use ringmap::map::raw_entry_v1::RawEntryMut;
     ///
-    /// let mut map = IndexMap::new();
+    /// let mut map = RingMap::new();
     /// map.extend([("a", 100), ("b", 200), ("c", 300)]);
     ///
     /// fn compute_hash<K: Hash + ?Sized, S: BuildHasher>(hash_builder: &S, key: &K) -> u64 {
@@ -138,7 +138,7 @@ pub trait RawEntryApiV1<K, V, S>: private::Sealed {
     ///     RawEntryMut::Vacant(_) => unreachable!(),
     ///     RawEntryMut::Occupied(view) => {
     ///         assert_eq!(view.index(), 2);
-    ///         assert_eq!(view.shift_remove_entry(), ("c", 300));
+    ///         assert_eq!(view.remove_entry(), ("c", 300));
     ///     }
     /// }
     /// assert_eq!(map.raw_entry_v1().from_key("c"), None);
@@ -163,7 +163,7 @@ pub trait RawEntryApiV1<K, V, S>: private::Sealed {
     ///     RawEntryMut::Vacant(_) => unreachable!(),
     ///     RawEntryMut::Occupied(view) => {
     ///         assert_eq!(view.index(), 2);
-    ///         assert_eq!(view.swap_remove_entry(), ("d", 40000));
+    ///         assert_eq!(view.swap_remove_back_entry(), ("d", 40000));
     ///     }
     /// }
     /// assert_eq!(map.get("d"), None);
@@ -172,7 +172,7 @@ pub trait RawEntryApiV1<K, V, S>: private::Sealed {
     fn raw_entry_mut_v1(&mut self) -> RawEntryBuilderMut<'_, K, V, S>;
 }
 
-impl<K, V, S> RawEntryApiV1<K, V, S> for IndexMap<K, V, S> {
+impl<K, V, S> RawEntryApiV1<K, V, S> for RingMap<K, V, S> {
     fn raw_entry_v1(&self) -> RawEntryBuilder<'_, K, V, S> {
         RawEntryBuilder { map: self }
     }
@@ -182,12 +182,12 @@ impl<K, V, S> RawEntryApiV1<K, V, S> for IndexMap<K, V, S> {
     }
 }
 
-/// A builder for computing where in an [`IndexMap`] a key-value pair would be stored.
+/// A builder for computing where in an [`RingMap`] a key-value pair would be stored.
 ///
-/// This `struct` is created by the [`IndexMap::raw_entry_v1`] method, provided by the
+/// This `struct` is created by the [`RingMap::raw_entry_v1`] method, provided by the
 /// [`RawEntryApiV1`] trait. See its documentation for more.
 pub struct RawEntryBuilder<'a, K, V, S> {
-    map: &'a IndexMap<K, V, S>,
+    map: &'a RingMap<K, V, S>,
 }
 
 impl<K, V, S> fmt::Debug for RawEntryBuilder<'_, K, V, S> {
@@ -243,18 +243,20 @@ impl<'a, K, V, S> RawEntryBuilder<'a, K, V, S> {
         F: FnMut(&K) -> bool,
     {
         let hash = HashValue(hash as usize);
-        let entries = &*self.map.core.entries;
-        let eq = move |&i: &usize| is_match(&entries[i].key);
-        self.map.core.indices.find(hash.get(), eq).copied()
+        let entries = &self.map.core.entries;
+        let offset = self.map.core.offset;
+        let eq = move |&i: &OffsetIndex| is_match(&entries[i.get(offset)].key);
+        let oi = self.map.core.indices.find(hash.get(), eq)?;
+        Some(oi.get(offset))
     }
 }
 
-/// A builder for computing where in an [`IndexMap`] a key-value pair would be stored.
+/// A builder for computing where in an [`RingMap`] a key-value pair would be stored.
 ///
-/// This `struct` is created by the [`IndexMap::raw_entry_mut_v1`] method, provided by the
+/// This `struct` is created by the [`RingMap::raw_entry_mut_v1`] method, provided by the
 /// [`RawEntryApiV1`] trait. See its documentation for more.
 pub struct RawEntryBuilderMut<'a, K, V, S> {
-    map: &'a mut IndexMap<K, V, S>,
+    map: &'a mut RingMap<K, V, S>,
 }
 
 impl<K, V, S> fmt::Debug for RawEntryBuilderMut<'_, K, V, S> {
@@ -287,16 +289,22 @@ impl<'a, K, V, S> RawEntryBuilderMut<'a, K, V, S> {
     where
         F: FnMut(&K) -> bool,
     {
-        let ref_entries = &*self.map.core.entries;
-        let eq = move |&i: &usize| is_match(&ref_entries[i].key);
+        let ref_entries = &self.map.core.entries;
+        let offset = self.map.core.offset;
+        let eq = move |&i: &OffsetIndex| is_match(&ref_entries[i.get(offset)].key);
         match self.map.core.indices.find_entry(hash, eq) {
             Ok(index) => RawEntryMut::Occupied(RawOccupiedEntryMut {
                 entries: &mut self.map.core.entries,
+                offset: &mut self.map.core.offset,
                 index,
                 hash_builder: PhantomData,
             }),
             Err(absent) => RawEntryMut::Vacant(RawVacantEntryMut {
-                map: RefMut::new(absent.into_table(), &mut self.map.core.entries),
+                map: RefMut::new(
+                    absent.into_table(),
+                    &mut self.map.core.entries,
+                    &mut self.map.core.offset,
+                ),
                 hash_builder: &self.map.hash_builder,
             }),
         }
@@ -376,11 +384,12 @@ impl<'a, K, V, S> RawEntryMut<'a, K, V, S> {
     }
 }
 
-/// A raw view into an occupied entry in an [`IndexMap`].
+/// A raw view into an occupied entry in an [`RingMap`].
 /// It is part of the [`RawEntryMut`] enum.
 pub struct RawOccupiedEntryMut<'a, K, V, S> {
     entries: &'a mut Entries<K, V>,
-    index: hash_table::OccupiedEntry<'a, usize>,
+    offset: &'a mut usize,
+    index: hash_table::OccupiedEntry<'a, OffsetIndex>,
     hash_builder: PhantomData<&'a S>,
 }
 
@@ -397,12 +406,12 @@ impl<'a, K, V, S> RawOccupiedEntryMut<'a, K, V, S> {
     /// Return the index of the key-value pair
     #[inline]
     pub fn index(&self) -> usize {
-        *self.index.get()
+        self.index.get().get(*self.offset)
     }
 
     #[inline]
     fn into_ref_mut(self) -> RefMut<'a, K, V> {
-        RefMut::new(self.index.into_table(), self.entries)
+        RefMut::new(self.index.into_table(), self.entries, self.offset)
     }
 
     /// Gets a reference to the entry's key in the map.
@@ -486,78 +495,80 @@ impl<'a, K, V, S> RawOccupiedEntryMut<'a, K, V, S> {
 
     /// Remove the key, value pair stored in the map for this entry, and return the value.
     ///
-    /// **NOTE:** This is equivalent to [`.swap_remove()`][Self::swap_remove], replacing this
-    /// entry's position with the last element, and it is deprecated in favor of calling that
-    /// explicitly. If you need to preserve the relative order of the keys in the map, use
-    /// [`.shift_remove()`][Self::shift_remove] instead.
-    #[deprecated(note = "`remove` disrupts the map order -- \
-        use `swap_remove` or `shift_remove` for explicit behavior.")]
+    /// Like [`VecDeque::remove`][super::VecDeque::remove], the pair is removed by shifting all of the
+    /// elements either before or after it, preserving their relative order.
+    /// **This perturbs the index of all of the following elements!**
+    ///
+    /// Computes in **O(n)** time (average).
     pub fn remove(self) -> V {
-        self.swap_remove()
-    }
-
-    /// Remove the key, value pair stored in the map for this entry, and return the value.
-    ///
-    /// Like [`Vec::swap_remove`][crate::Vec::swap_remove], the pair is removed by swapping it with
-    /// the last element of the map and popping it off.
-    /// **This perturbs the position of what used to be the last element!**
-    ///
-    /// Computes in **O(1)** time (average).
-    pub fn swap_remove(self) -> V {
-        self.swap_remove_entry().1
-    }
-
-    /// Remove the key, value pair stored in the map for this entry, and return the value.
-    ///
-    /// Like [`Vec::remove`][crate::Vec::remove], the pair is removed by shifting all of the
-    /// elements that follow it, preserving their relative order.
-    /// **This perturbs the index of all of those elements!**
-    ///
-    /// Computes in **O(n)** time (average).
-    pub fn shift_remove(self) -> V {
-        self.shift_remove_entry().1
+        self.remove_entry().1
     }
 
     /// Remove and return the key, value pair stored in the map for this entry
     ///
-    /// **NOTE:** This is equivalent to [`.swap_remove_entry()`][Self::swap_remove_entry],
-    /// replacing this entry's position with the last element, and it is deprecated in favor of
-    /// calling that explicitly. If you need to preserve the relative order of the keys in the map,
-    /// use [`.shift_remove_entry()`][Self::shift_remove_entry] instead.
-    #[deprecated(note = "`remove_entry` disrupts the map order -- \
-        use `swap_remove_entry` or `shift_remove_entry` for explicit behavior.")]
+    /// Like [`VecDeque::remove`][super::VecDeque::remove], the pair is removed by shifting all of the
+    /// elements either before or after it, preserving their relative order.
+    /// **This perturbs the index of all of the following elements!**
+    ///
+    /// Computes in **O(n)** time (average).
     pub fn remove_entry(self) -> (K, V) {
-        self.swap_remove_entry()
+        let (index, entry) = self.index.remove();
+        let index = index.get(*self.offset);
+        RefMut::new(entry.into_table(), self.entries, self.offset).shift_remove_finish(index)
     }
 
-    /// Remove and return the key, value pair stored in the map for this entry
+    /// Remove the key, value pair stored in the map for this entry, and return the value.
     ///
-    /// Like [`Vec::swap_remove`][crate::Vec::swap_remove], the pair is removed by swapping it with
-    /// the last element of the map and popping it off.
+    /// Like [`VecDeque::swap_remove_back`][super::VecDeque::swap_remove_back], the pair is removed
+    /// by swapping it with the last element of the map and popping it off.
     /// **This perturbs the position of what used to be the last element!**
     ///
     /// Computes in **O(1)** time (average).
-    pub fn swap_remove_entry(self) -> (K, V) {
-        let (index, entry) = self.index.remove();
-        RefMut::new(entry.into_table(), self.entries).swap_remove_finish(index)
+    pub fn swap_remove_back(self) -> V {
+        self.swap_remove_back_entry().1
     }
 
     /// Remove and return the key, value pair stored in the map for this entry
     ///
-    /// Like [`Vec::remove`][crate::Vec::remove], the pair is removed by shifting all of the
-    /// elements that follow it, preserving their relative order.
-    /// **This perturbs the index of all of those elements!**
+    /// Like [`VecDeque::swap_remove_back`][super::VecDeque::swap_remove_back], the pair is removed
+    /// by swapping it with the last element of the map and popping it off.
+    /// **This perturbs the position of what used to be the last element!**
     ///
-    /// Computes in **O(n)** time (average).
-    pub fn shift_remove_entry(self) -> (K, V) {
+    /// Computes in **O(1)** time (average).
+    pub fn swap_remove_back_entry(self) -> (K, V) {
         let (index, entry) = self.index.remove();
-        RefMut::new(entry.into_table(), self.entries).shift_remove_finish(index)
+        let index = index.get(*self.offset);
+        RefMut::new(entry.into_table(), self.entries, self.offset).swap_remove_back_finish(index)
+    }
+
+    /// Remove the key, value pair stored in the map for this entry, and return the value.
+    ///
+    /// Like [`VecDeque::swap_remove_front`][super::VecDeque::swap_remove_front], the pair is removed
+    /// by swapping it with the first element of the map and popping it off.
+    /// **This perturbs the position of what used to be the first element!**
+    ///
+    /// Computes in **O(1)** time (average).
+    pub fn swap_remove_front(self) -> V {
+        self.swap_remove_front_entry().1
+    }
+
+    /// Remove and return the key, value pair stored in the map for this entry
+    ///
+    /// Like [`VecDeque::swap_remove_front`][super::VecDeque::swap_remove_front], the pair is removed
+    /// by swapping it with the first element of the map and popping it off.
+    /// **This perturbs the position of what used to be the first element!**
+    ///
+    /// Computes in **O(1)** time (average).
+    pub fn swap_remove_front_entry(self) -> (K, V) {
+        let (index, entry) = self.index.remove();
+        let index = index.get(*self.offset);
+        RefMut::new(entry.into_table(), self.entries, self.offset).swap_remove_front_finish(index)
     }
 
     /// Moves the position of the entry to a new index
     /// by shifting all other entries in-between.
     ///
-    /// This is equivalent to [`IndexMap::move_index`]
+    /// This is equivalent to [`RingMap::move_index`]
     /// coming `from` the current [`.index()`][Self::index].
     ///
     /// * If `self.index() < to`, the other pairs will shift down while the targeted pair moves up.
@@ -573,7 +584,7 @@ impl<'a, K, V, S> RawOccupiedEntryMut<'a, K, V, S> {
 
     /// Swaps the position of entry with another.
     ///
-    /// This is equivalent to [`IndexMap::swap_indices`]
+    /// This is equivalent to [`RingMap::swap_indices`]
     /// with the current [`.index()`][Self::index] as one of the two being swapped.
     ///
     /// ***Panics*** if the `other` index is out of bounds.
@@ -585,7 +596,7 @@ impl<'a, K, V, S> RawOccupiedEntryMut<'a, K, V, S> {
     }
 }
 
-/// A view into a vacant raw entry in an [`IndexMap`].
+/// A view into a vacant raw entry in an [`RingMap`].
 /// It is part of the [`RawEntryMut`] enum.
 pub struct RawVacantEntryMut<'a, K, V, S> {
     map: RefMut<'a, K, V>,
@@ -620,7 +631,7 @@ impl<'a, K, V, S> RawVacantEntryMut<'a, K, V, S> {
     /// and returns mutable references to them.
     pub fn insert_hashed_nocheck(self, hash: u64, key: K, value: V) -> (&'a mut K, &'a mut V) {
         let hash = HashValue(hash as usize);
-        self.map.insert_unique(hash, key, value).into_muts()
+        self.map.push_back_unique(hash, key, value).into_muts()
     }
 
     /// Inserts the given key and value into the map at the given index,
@@ -661,5 +672,5 @@ impl<'a, K, V, S> RawVacantEntryMut<'a, K, V, S> {
 mod private {
     pub trait Sealed {}
 
-    impl<K, V, S> Sealed for super::IndexMap<K, V, S> {}
+    impl<K, V, S> Sealed for super::RingMap<K, V, S> {}
 }

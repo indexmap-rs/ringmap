@@ -1,9 +1,9 @@
 use core::hash::{BuildHasher, Hash};
 
-use super::{Equivalent, IndexSet};
+use super::{Equivalent, RingSet};
 use crate::map::MutableKeys;
 
-/// Opt-in mutable access to [`IndexSet`] values.
+/// Opt-in mutable access to [`RingSet`] values.
 ///
 /// These methods expose `&mut T`, mutable references to the value as it is stored
 /// in the set.
@@ -14,7 +14,7 @@ use crate::map::MutableKeys;
 /// This is sound (memory safe) but a logical error hazard (just like
 /// implementing `PartialEq`, `Eq`, or `Hash` incorrectly would be).
 ///
-/// `use` this trait to enable its methods for `IndexSet`.
+/// `use` this trait to enable its methods for `RingSet`.
 ///
 /// This trait is sealed and cannot be implemented for types outside this crate.
 pub trait MutableValues: private::Sealed {
@@ -45,10 +45,10 @@ pub trait MutableValues: private::Sealed {
         F: FnMut(&mut Self::Value) -> bool;
 }
 
-/// Opt-in mutable access to [`IndexSet`] values.
+/// Opt-in mutable access to [`RingSet`] values.
 ///
 /// See [`MutableValues`] for more information.
-impl<T, S> MutableValues for IndexSet<T, S>
+impl<T, S> MutableValues for RingSet<T, S>
 where
     S: BuildHasher,
 {
@@ -82,5 +82,5 @@ where
 mod private {
     pub trait Sealed {}
 
-    impl<T, S> Sealed for super::IndexSet<T, S> {}
+    impl<T, S> Sealed for super::RingSet<T, S> {}
 }

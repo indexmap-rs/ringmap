@@ -1,14 +1,14 @@
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 #[macro_export]
-/// Create an [`IndexMap`][crate::IndexMap] from a list of key-value pairs
+/// Create an [`RingMap`][crate::RingMap] from a list of key-value pairs
 ///
 /// ## Example
 ///
 /// ```
-/// use indexmap::indexmap;
+/// use ringmap::ringmap;
 ///
-/// let map = indexmap!{
+/// let map = ringmap!{
 ///     "a" => 1,
 ///     "b" => 2,
 /// };
@@ -19,14 +19,14 @@
 /// // "a" is the first key
 /// assert_eq!(map.keys().next(), Some(&"a"));
 /// ```
-macro_rules! indexmap {
-    ($($key:expr => $value:expr,)+) => { $crate::indexmap!($($key => $value),+) };
+macro_rules! ringmap {
+    ($($key:expr => $value:expr,)+) => { $crate::ringmap!($($key => $value),+) };
     ($($key:expr => $value:expr),*) => {
         {
             // Note: `stringify!($key)` is just here to consume the repetition,
             // but we throw away that string literal during constant evaluation.
             const CAP: usize = <[()]>::len(&[$({ stringify!($key); }),*]);
-            let mut map = $crate::IndexMap::with_capacity(CAP);
+            let mut map = $crate::RingMap::with_capacity(CAP);
             $(
                 map.insert($key, $value);
             )*
@@ -38,14 +38,14 @@ macro_rules! indexmap {
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 #[macro_export]
-/// Create an [`IndexSet`][crate::IndexSet] from a list of values
+/// Create an [`RingSet`][crate::RingSet] from a list of values
 ///
 /// ## Example
 ///
 /// ```
-/// use indexmap::indexset;
+/// use ringmap::ringset;
 ///
-/// let set = indexset!{
+/// let set = ringset!{
 ///     "a",
 ///     "b",
 /// };
@@ -56,14 +56,14 @@ macro_rules! indexmap {
 /// // "a" is the first value
 /// assert_eq!(set.iter().next(), Some(&"a"));
 /// ```
-macro_rules! indexset {
-    ($($value:expr,)+) => { $crate::indexset!($($value),+) };
+macro_rules! ringset {
+    ($($value:expr,)+) => { $crate::ringset!($($value),+) };
     ($($value:expr),*) => {
         {
             // Note: `stringify!($value)` is just here to consume the repetition,
             // but we throw away that string literal during constant evaluation.
             const CAP: usize = <[()]>::len(&[$({ stringify!($value); }),*]);
-            let mut set = $crate::IndexSet::with_capacity(CAP);
+            let mut set = $crate::RingSet::with_capacity(CAP);
             $(
                 set.insert($value);
             )*
@@ -125,7 +125,7 @@ macro_rules! double_ended_iterator_methods {
 
 // generate `ParallelIterator` methods by just forwarding to the underlying
 // self.entries and mapping its elements.
-#[cfg(any(feature = "rayon", feature = "rustc-rayon"))]
+#[cfg(feature = "rayon")]
 macro_rules! parallel_iterator_methods {
     // $map_elt is the mapping function from the underlying iterator's element
     ($map_elt:expr) => {
@@ -150,7 +150,7 @@ macro_rules! parallel_iterator_methods {
 
 // generate `IndexedParallelIterator` methods by just forwarding to the underlying
 // self.entries and mapping its elements.
-#[cfg(any(feature = "rayon", feature = "rustc-rayon"))]
+#[cfg(feature = "rayon")]
 macro_rules! indexed_parallel_iterator_methods {
     // $map_elt is the mapping function from the underlying iterator's element
     ($map_elt:expr) => {
