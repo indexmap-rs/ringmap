@@ -12,9 +12,6 @@ use core::ops::{self, Bound, Index, RangeBounds};
 ///
 /// This supports indexed operations much like a `[T]` slice,
 /// but not any hashed operations on the values.
-///
-/// Unlike `RingSet`, `Slice` does consider the order for [`PartialEq`]
-/// and [`Eq`], and it also implements [`PartialOrd`], [`Ord`], and [`Hash`].
 #[repr(transparent)]
 pub struct Slice<T> {
     pub(crate) entries: [Bucket<T>],
