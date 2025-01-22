@@ -39,7 +39,6 @@
 //!   [`map::serde_seq`] module.
 //! * `borsh`: Adds implementations for [`BorshSerialize`] and [`BorshDeserialize`]
 //!   to [`RingMap`] and [`RingSet`].
-//!   `use borsh_derive::{BorshSerialize, BorshDeserialize};`.
 //! * `arbitrary`: Adds implementations for the [`arbitrary::Arbitrary`] trait
 //!   to [`RingMap`] and [`RingSet`].
 //! * `quickcheck`: Adds implementations for the [`quickcheck::Arbitrary`] trait

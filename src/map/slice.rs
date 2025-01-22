@@ -12,9 +12,6 @@ use core::ops::{self, Bound, Index, IndexMut, RangeBounds};
 ///
 /// This supports indexed operations much like a `[(K, V)]` slice,
 /// but not any hashed operations on the map keys.
-///
-/// Unlike `RingMap`, `Slice` does consider the order for [`PartialEq`]
-/// and [`Eq`], and it also implements [`PartialOrd`], [`Ord`], and [`Hash`].
 #[repr(transparent)]
 pub struct Slice<K, V> {
     pub(crate) entries: [Bucket<K, V>],
