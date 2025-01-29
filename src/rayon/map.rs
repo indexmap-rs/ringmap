@@ -83,11 +83,15 @@ pub(super) struct ParBuckets<'a, K, V> {
 
 impl<'a, K, V> ParBuckets<'a, K, V> {
     pub(super) fn new(entries: &'a VecDeque<Bucket<K, V>>) -> Self {
-        Self::from_slices(entries.as_slices())
+        let (head, tail) = entries.as_slices();
+        Self { head, tail }
     }
 
-    pub(super) fn from_slices((head, tail): (&'a [Bucket<K, V>], &'a [Bucket<K, V>])) -> Self {
-        Self { head, tail }
+    pub(super) fn from_slice(slice: &'a [Bucket<K, V>]) -> Self {
+        Self {
+            head: slice,
+            tail: &[],
+        }
     }
 
     pub(super) fn iter(&self) -> impl Iterator<Item = &Bucket<K, V>> {
@@ -119,7 +123,7 @@ impl<'a, K: Sync, V: Sync> ParallelIterator for ParBuckets<'a, K, V> {
     }
 }
 
-impl<'a, K: Sync, V: Sync> IndexedParallelIterator for ParBuckets<'a, K, V> {
+impl<K: Sync, V: Sync> IndexedParallelIterator for ParBuckets<'_, K, V> {
     fn drive<C>(self, consumer: C) -> C::Result
     where
         C: Consumer<Self::Item>,
@@ -167,7 +171,7 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         ParIter {
-            entries: ParBuckets::from_slices((&self.entries, &[])),
+            entries: ParBuckets::from_slice(&self.entries),
         }
     }
 }
@@ -215,11 +219,15 @@ struct ParBucketsMut<'a, K, V> {
 
 impl<'a, K, V> ParBucketsMut<'a, K, V> {
     fn new(entries: &'a mut VecDeque<Bucket<K, V>>) -> Self {
-        Self::from_mut_slices(entries.as_mut_slices())
+        let (head, tail) = entries.as_mut_slices();
+        Self { head, tail }
     }
 
-    fn from_mut_slices((head, tail): (&'a mut [Bucket<K, V>], &'a mut [Bucket<K, V>])) -> Self {
-        Self { head, tail }
+    fn from_mut_slice(slice: &'a mut [Bucket<K, V>]) -> Self {
+        Self {
+            head: slice,
+            tail: &mut [],
+        }
     }
 
     fn iter(&self) -> impl Iterator<Item = &Bucket<K, V>> {
@@ -245,7 +253,7 @@ impl<'a, K: Send, V: Send> ParallelIterator for ParBucketsMut<'a, K, V> {
     }
 }
 
-impl<'a, K: Send, V: Send> IndexedParallelIterator for ParBucketsMut<'a, K, V> {
+impl<K: Send, V: Send> IndexedParallelIterator for ParBucketsMut<'_, K, V> {
     fn drive<C>(self, consumer: C) -> C::Result
     where
         C: Consumer<Self::Item>,
@@ -293,7 +301,7 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         ParIterMut {
-            entries: ParBucketsMut::from_mut_slices((&mut self.entries, &mut [])),
+            entries: ParBucketsMut::from_mut_slice(&mut self.entries),
         }
     }
 }
@@ -407,7 +415,7 @@ where
     /// in the slice is still preserved for operations like `reduce` and `collect`.
     pub fn par_keys(&self) -> ParKeys<'_, K, V> {
         ParKeys {
-            entries: ParBuckets::from_slices((&self.entries, &[])),
+            entries: ParBuckets::from_slice(&self.entries),
         }
     }
 
@@ -417,7 +425,7 @@ where
     /// in the slice is still preserved for operations like `reduce` and `collect`.
     pub fn par_values(&self) -> ParValues<'_, K, V> {
         ParValues {
-            entries: ParBuckets::from_slices((&self.entries, &[])),
+            entries: ParBuckets::from_slice(&self.entries),
         }
     }
 }
@@ -530,7 +538,7 @@ where
     /// in the slice is still preserved for operations like `reduce` and `collect`.
     pub fn par_values_mut(&mut self) -> ParValuesMut<'_, K, V> {
         ParValuesMut {
-            entries: ParBucketsMut::from_mut_slices((&mut self.entries, &mut [])),
+            entries: ParBucketsMut::from_mut_slice(&mut self.entries),
         }
     }
 }

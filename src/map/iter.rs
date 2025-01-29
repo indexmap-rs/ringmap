@@ -43,13 +43,17 @@ pub(crate) struct Buckets<'a, K, V> {
 
 impl<'a, K, V> Buckets<'a, K, V> {
     pub(crate) fn new(entries: &'a VecDeque<Bucket<K, V>>) -> Self {
-        Self::from_slices(entries.as_slices())
-    }
-
-    pub(crate) fn from_slices((head, tail): (&'a [Bucket<K, V>], &'a [Bucket<K, V>])) -> Self {
+        let (head, tail) = entries.as_slices();
         Self {
             head: head.iter(),
             tail: tail.iter(),
+        }
+    }
+
+    pub(crate) fn from_slice(slice: &'a [Bucket<K, V>]) -> Self {
+        Self {
+            head: slice.iter(),
+            tail: [].iter(),
         }
     }
 }
@@ -148,18 +152,25 @@ struct BucketsMut<'a, K, V> {
 
 impl<'a, K, V> BucketsMut<'a, K, V> {
     fn new(entries: &'a mut VecDeque<Bucket<K, V>>) -> Self {
-        Self::from_mut_slices(entries.as_mut_slices())
-    }
-
-    fn from_mut_slices((head, tail): (&'a mut [Bucket<K, V>], &'a mut [Bucket<K, V>])) -> Self {
+        let (head, tail) = entries.as_mut_slices();
         Self {
             head: head.iter_mut(),
             tail: tail.iter_mut(),
         }
     }
 
+    fn from_mut_slice(slice: &'a mut [Bucket<K, V>]) -> Self {
+        Self {
+            head: slice.iter_mut(),
+            tail: [].iter_mut(),
+        }
+    }
+
     fn iter(&self) -> Buckets<'_, K, V> {
-        Buckets::from_slices((self.head.as_slice(), self.tail.as_slice()))
+        Buckets {
+            head: self.head.as_slice().iter(),
+            tail: self.tail.as_slice().iter(),
+        }
     }
 }
 
@@ -255,9 +266,9 @@ impl<'a, K, V> Iter<'a, K, V> {
         }
     }
 
-    pub(super) fn from_slices(slices: (&'a [Bucket<K, V>], &'a [Bucket<K, V>])) -> Self {
+    pub(super) fn from_slice(slice: &'a [Bucket<K, V>]) -> Self {
         Self {
-            iter: Buckets::from_slices(slices),
+            iter: Buckets::from_slice(slice),
         }
     }
 }
@@ -318,11 +329,9 @@ impl<'a, K, V> IterMut<'a, K, V> {
         }
     }
 
-    pub(super) fn from_mut_slices(
-        slices: (&'a mut [Bucket<K, V>], &'a mut [Bucket<K, V>]),
-    ) -> Self {
+    pub(super) fn from_mut_slice(slice: &'a mut [Bucket<K, V>]) -> Self {
         Self {
-            iter: BucketsMut::from_mut_slices(slices),
+            iter: BucketsMut::from_mut_slice(slice),
         }
     }
 }
@@ -517,9 +526,9 @@ impl<'a, K, V> Keys<'a, K, V> {
         }
     }
 
-    pub(super) fn from_slices(slices: (&'a [Bucket<K, V>], &'a [Bucket<K, V>])) -> Self {
+    pub(super) fn from_slice(slice: &'a [Bucket<K, V>]) -> Self {
         Self {
-            iter: Buckets::from_slices(slices),
+            iter: Buckets::from_slice(slice),
         }
     }
 }
@@ -623,7 +632,7 @@ impl<K, V> Default for Keys<'_, K, V> {
 /// map.insert("foo", 1);
 /// println!("{:?}", map.keys()[10]); // panics!
 /// ```
-impl<'a, K, V> Index<usize> for Keys<'a, K, V> {
+impl<K, V> Index<usize> for Keys<'_, K, V> {
     type Output = K;
 
     /// Returns a reference to the key at the supplied `index`.
@@ -705,9 +714,9 @@ impl<'a, K, V> Values<'a, K, V> {
         }
     }
 
-    pub(super) fn from_slices(slices: (&'a [Bucket<K, V>], &'a [Bucket<K, V>])) -> Self {
+    pub(super) fn from_slice(slice: &'a [Bucket<K, V>]) -> Self {
         Self {
-            iter: Buckets::from_slices(slices),
+            iter: Buckets::from_slice(slice),
         }
     }
 }
@@ -768,11 +777,9 @@ impl<'a, K, V> ValuesMut<'a, K, V> {
         }
     }
 
-    pub(super) fn from_mut_slices(
-        slices: (&'a mut [Bucket<K, V>], &'a mut [Bucket<K, V>]),
-    ) -> Self {
+    pub(super) fn from_mut_slice(slice: &'a mut [Bucket<K, V>]) -> Self {
         Self {
-            iter: BucketsMut::from_mut_slices(slices),
+            iter: BucketsMut::from_mut_slice(slice),
         }
     }
 }
@@ -975,7 +982,7 @@ where
 {
 }
 
-impl<'a, I, K, V, S> fmt::Debug for Splice<'a, I, K, V, S>
+impl<I, K, V, S> fmt::Debug for Splice<'_, I, K, V, S>
 where
     I: fmt::Debug + Iterator<Item = (K, V)>,
     K: fmt::Debug + Hash + Eq,

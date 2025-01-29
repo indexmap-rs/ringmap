@@ -98,7 +98,7 @@ where
 
     fn into_par_iter(self) -> Self::Iter {
         ParIter {
-            entries: ParBuckets::from_slices((&self.entries, &[])),
+            entries: ParBuckets::from_slice(&self.entries),
         }
     }
 }

@@ -40,9 +40,9 @@ impl<'a, T> Iter<'a, T> {
         }
     }
 
-    pub(super) fn from_slices(slices: (&'a [Bucket<T>], &'a [Bucket<T>])) -> Self {
+    pub(super) fn from_slice(slice: &'a [Bucket<T>]) -> Self {
         Self {
-            iter: Buckets::from_slices(slices),
+            iter: Buckets::from_slice(slice),
         }
     }
 }
@@ -607,7 +607,7 @@ impl<I: Iterator> Iterator for UnitValue<I> {
     }
 }
 
-impl<'a, I, T, S> fmt::Debug for Splice<'a, I, T, S>
+impl<I, T, S> fmt::Debug for Splice<'_, I, T, S>
 where
     I: fmt::Debug + Iterator<Item = T>,
     T: fmt::Debug + Hash + Eq,

@@ -102,23 +102,23 @@ fn update_index(table: &mut Indices, offset: usize, hash: HashValue, old: usize,
     *index = OffsetIndex::new(new, offset);
 }
 
+/// A simple alias to help `clippy::type_complexity`
+type Pair<T> = (T, T);
+
 #[inline]
-fn len_slices<T>((head, tail): (&[T], &[T])) -> usize {
+fn len_slices<T>((head, tail): Pair<&[T]>) -> usize {
     head.len() + tail.len()
 }
 
 #[inline]
-fn iter_slices<'a, T>(
-    (head, tail): (&'a [T], &'a [T]),
-) -> iter::Chain<slice::Iter<'a, T>, slice::Iter<'a, T>> {
+fn iter_slices<T>(
+    (head, tail): Pair<&'_ [T]>,
+) -> iter::Chain<slice::Iter<'_, T>, slice::Iter<'_, T>> {
     head.iter().chain(tail)
 }
 
 #[inline]
-fn split_slices<'a, T>(
-    (head, tail): (&'a [T], &'a [T]),
-    i: usize,
-) -> ((&'a [T], &'a [T]), (&'a [T], &'a [T])) {
+fn split_slices<T>((head, tail): Pair<&'_ [T]>, i: usize) -> Pair<Pair<&'_ [T]>> {
     if i <= head.len() {
         let (head, mid) = head.split_at(i);
         ((head, &[]), (mid, tail))
@@ -129,10 +129,7 @@ fn split_slices<'a, T>(
 }
 
 #[inline]
-fn split_slices_mut<'a, T>(
-    (head, tail): (&'a mut [T], &'a mut [T]),
-    i: usize,
-) -> ((&'a mut [T], &'a mut [T]), (&'a mut [T], &'a mut [T])) {
+fn split_slices_mut<T>((head, tail): Pair<&'_ mut [T]>, i: usize) -> Pair<Pair<&'_ mut [T]>> {
     if i <= head.len() {
         let (head, mid) = head.split_at_mut(i);
         ((head, &mut []), (mid, tail))
@@ -143,11 +140,7 @@ fn split_slices_mut<'a, T>(
 }
 
 #[inline]
-fn sub_slices_mut<'a, T>(
-    slices: (&'a mut [T], &'a mut [T]),
-    start: usize,
-    end: usize,
-) -> (&'a mut [T], &'a mut [T]) {
+fn sub_slices_mut<T>(slices: Pair<&'_ mut [T]>, start: usize, end: usize) -> Pair<&'_ mut [T]> {
     let (slices, _) = split_slices_mut(slices, end);
     split_slices_mut(slices, start).1
 }
@@ -156,11 +149,7 @@ fn sub_slices_mut<'a, T>(
 /// and without regard for duplication.
 ///
 /// ***Panics*** if there is not sufficient capacity already.
-fn insert_bulk_no_grow<K, V>(
-    indices: &mut Indices,
-    offset: usize,
-    entries: (&[Bucket<K, V>], &[Bucket<K, V>]),
-) {
+fn insert_bulk_no_grow<K, V>(indices: &mut Indices, offset: usize, entries: Pair<&[Bucket<K, V>]>) {
     assert!(indices.capacity() - indices.len() >= len_slices(entries));
     for entry in iter_slices(entries) {
         let index = OffsetIndex::new(indices.len(), offset);
