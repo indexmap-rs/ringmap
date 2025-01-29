@@ -92,6 +92,14 @@ impl<'a, K, V> Iterator for Buckets<'a, K, V> {
         self.next_back()
     }
 
+    fn fold<Acc, F>(self, mut acc: Acc, mut f: F) -> Acc
+    where
+        F: FnMut(Acc, Self::Item) -> Acc,
+    {
+        acc = self.head.fold(acc, &mut f);
+        self.tail.fold(acc, &mut f)
+    }
+
     fn collect<C>(self) -> C
     where
         C: FromIterator<Self::Item>,
@@ -117,6 +125,14 @@ impl<K, V> DoubleEndedIterator for Buckets<'_, K, V> {
             self.tail = [].iter();
         }
         self.head.nth_back(n)
+    }
+
+    fn rfold<Acc, F>(self, mut acc: Acc, mut f: F) -> Acc
+    where
+        F: FnMut(Acc, Self::Item) -> Acc,
+    {
+        acc = self.tail.rfold(acc, &mut f);
+        self.head.rfold(acc, &mut f)
     }
 }
 
@@ -208,6 +224,14 @@ impl<'a, K, V> Iterator for BucketsMut<'a, K, V> {
         self.next_back()
     }
 
+    fn fold<Acc, F>(self, acc: Acc, mut f: F) -> Acc
+    where
+        F: FnMut(Acc, Self::Item) -> Acc,
+    {
+        let acc = self.head.fold(acc, &mut f);
+        self.tail.fold(acc, &mut f)
+    }
+
     fn collect<C>(self) -> C
     where
         C: FromIterator<Self::Item>,
@@ -233,6 +257,14 @@ impl<K, V> DoubleEndedIterator for BucketsMut<'_, K, V> {
             self.tail = [].iter_mut();
         }
         self.head.nth_back(n)
+    }
+
+    fn rfold<Acc, F>(self, acc: Acc, mut f: F) -> Acc
+    where
+        F: FnMut(Acc, Self::Item) -> Acc,
+    {
+        let acc = self.tail.rfold(acc, &mut f);
+        self.head.rfold(acc, &mut f)
     }
 }
 
