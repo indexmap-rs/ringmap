@@ -2,11 +2,10 @@ use super::core::RingMapCore;
 use super::{Bucket, Entries, RingMap};
 
 use alloc::collections::vec_deque::{self, VecDeque};
-use core::fmt;
 use core::hash::{BuildHasher, Hash};
 use core::iter::FusedIterator;
 use core::ops::{Index, RangeBounds};
-use core::slice;
+use core::{fmt, mem, slice};
 
 impl<'a, K, V, S> IntoIterator for &'a RingMap<K, V, S> {
     type Item = (&'a K, &'a V);
@@ -64,7 +63,12 @@ impl<'a, K, V> Iterator for Buckets<'a, K, V> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.head.next() {
             next @ Some(_) => next,
-            None => self.tail.next(),
+            None => {
+                // Swap so the rest is found on the first branch next time.
+                // (Like `VecDeque` does in its own iterators.)
+                mem::swap(&mut self.head, &mut self.tail);
+                self.head.next()
+            }
         }
     }
 
@@ -78,14 +82,12 @@ impl<'a, K, V> Iterator for Buckets<'a, K, V> {
     }
 
     fn nth(&mut self, mut n: usize) -> Option<Self::Item> {
-        if n < self.head.len() {
-            return self.head.nth(n);
-        }
-        if self.head.len() > 0 {
+        if n >= self.head.len() {
             n -= self.head.len();
             self.head = [].iter();
+            mem::swap(&mut self.head, &mut self.tail);
         }
-        self.tail.nth(n)
+        self.head.nth(n)
     }
 
     fn last(mut self) -> Option<Self::Item> {
@@ -112,19 +114,22 @@ impl<K, V> DoubleEndedIterator for Buckets<'_, K, V> {
     fn next_back(&mut self) -> Option<Self::Item> {
         match self.tail.next_back() {
             next @ Some(_) => next,
-            None => self.head.next_back(),
+            None => {
+                // Swap so the rest is found on the first branch next time.
+                // (Like `VecDeque` does in its own iterators.)
+                mem::swap(&mut self.head, &mut self.tail);
+                self.tail.next_back()
+            }
         }
     }
 
     fn nth_back(&mut self, mut n: usize) -> Option<Self::Item> {
-        if n < self.tail.len() {
-            return self.tail.nth_back(n);
-        }
-        if self.tail.len() > 0 {
+        if n >= self.tail.len() {
             n -= self.tail.len();
             self.tail = [].iter();
+            mem::swap(&mut self.head, &mut self.tail);
         }
-        self.head.nth_back(n)
+        self.tail.nth_back(n)
     }
 
     fn rfold<Acc, F>(self, mut acc: Acc, mut f: F) -> Acc
@@ -196,7 +201,12 @@ impl<'a, K, V> Iterator for BucketsMut<'a, K, V> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.head.next() {
             next @ Some(_) => next,
-            None => self.tail.next(),
+            None => {
+                // Swap so the rest is found on the first branch next time.
+                // (Like `VecDeque` does in its own iterators.)
+                mem::swap(&mut self.head, &mut self.tail);
+                self.head.next()
+            }
         }
     }
 
@@ -210,14 +220,12 @@ impl<'a, K, V> Iterator for BucketsMut<'a, K, V> {
     }
 
     fn nth(&mut self, mut n: usize) -> Option<Self::Item> {
-        if n < self.head.len() {
-            return self.head.nth(n);
-        }
-        if self.head.len() > 0 {
+        if n >= self.head.len() {
             n -= self.head.len();
             self.head = [].iter_mut();
+            mem::swap(&mut self.head, &mut self.tail);
         }
-        self.tail.nth(n)
+        self.head.nth(n)
     }
 
     fn last(mut self) -> Option<Self::Item> {
@@ -244,19 +252,22 @@ impl<K, V> DoubleEndedIterator for BucketsMut<'_, K, V> {
     fn next_back(&mut self) -> Option<Self::Item> {
         match self.tail.next_back() {
             next @ Some(_) => next,
-            None => self.head.next_back(),
+            None => {
+                // Swap so the rest is found on the first branch next time.
+                // (Like `VecDeque` does in its own iterators.)
+                mem::swap(&mut self.head, &mut self.tail);
+                self.tail.next_back()
+            }
         }
     }
 
     fn nth_back(&mut self, mut n: usize) -> Option<Self::Item> {
-        if n < self.tail.len() {
-            return self.tail.nth_back(n);
-        }
-        if self.tail.len() > 0 {
+        if n >= self.tail.len() {
             n -= self.tail.len();
             self.tail = [].iter_mut();
+            mem::swap(&mut self.head, &mut self.tail);
         }
-        self.head.nth_back(n)
+        self.tail.nth_back(n)
     }
 
     fn rfold<Acc, F>(self, acc: Acc, mut f: F) -> Acc
