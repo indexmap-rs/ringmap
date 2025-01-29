@@ -173,17 +173,17 @@ impl<K, V> Slice<K, V> {
 
     /// Return an iterator over the key-value pairs of the map slice.
     pub fn iter(&self) -> Iter<'_, K, V> {
-        Iter::from_slices((&self.entries, &[]))
+        Iter::from_slice(&self.entries)
     }
 
     /// Return an iterator over the key-value pairs of the map slice.
     pub fn iter_mut(&mut self) -> IterMut<'_, K, V> {
-        IterMut::from_mut_slices((&mut self.entries, &mut []))
+        IterMut::from_mut_slice(&mut self.entries)
     }
 
     /// Return an iterator over the keys of the map slice.
     pub fn keys(&self) -> Keys<'_, K, V> {
-        Keys::from_slices((&self.entries, &[]))
+        Keys::from_slice(&self.entries)
     }
 
     /// Return an owning iterator over the keys of the map slice.
@@ -193,12 +193,12 @@ impl<K, V> Slice<K, V> {
 
     /// Return an iterator over the values of the map slice.
     pub fn values(&self) -> Values<'_, K, V> {
-        Values::from_slices((&self.entries, &[]))
+        Values::from_slice(&self.entries)
     }
 
     /// Return an iterator over mutable references to the the values of the map slice.
     pub fn values_mut(&mut self) -> ValuesMut<'_, K, V> {
-        ValuesMut::from_mut_slices((&mut self.entries, &mut []))
+        ValuesMut::from_mut_slice(&mut self.entries)
     }
 
     /// Return an owning iterator over the values of the map slice.

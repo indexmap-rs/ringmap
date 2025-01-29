@@ -40,9 +40,9 @@ impl<'a, T> Iter<'a, T> {
         }
     }
 
-    pub(super) fn from_slices(slices: (&'a [Bucket<T>], &'a [Bucket<T>])) -> Self {
+    pub(super) fn from_slice(slice: &'a [Bucket<T>]) -> Self {
         Self {
-            iter: Buckets::from_slices(slices),
+            iter: Buckets::from_slice(slice),
         }
     }
 }

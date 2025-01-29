@@ -109,7 +109,7 @@ impl<T> Slice<T> {
 
     /// Return an iterator over the values of the set slice.
     pub fn iter(&self) -> Iter<'_, T> {
-        Iter::from_slices((&self.entries, &[]))
+        Iter::from_slice(&self.entries)
     }
 
     /// Search over a sorted set for a value.
