@@ -98,6 +98,13 @@ macro_rules! iterator_methods {
             self.next_back()
         }
 
+        fn fold<Acc, F>(self, acc: Acc, f: F) -> Acc
+        where
+            F: FnMut(Acc, Self::Item) -> Acc,
+        {
+            self.iter.map($map_elt).fold(acc, f)
+        }
+
         fn collect<C>(self) -> C
         where
             C: FromIterator<Self::Item>,
@@ -119,6 +126,13 @@ macro_rules! double_ended_iterator_methods {
 
         fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
             self.iter.nth_back(n).map($map_elt)
+        }
+
+        fn rfold<Acc, F>(self, acc: Acc, f: F) -> Acc
+        where
+            F: FnMut(Acc, Self::Item) -> Acc,
+        {
+            self.iter.map($map_elt).rfold(acc, f)
         }
     };
 }
