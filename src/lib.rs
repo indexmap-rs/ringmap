@@ -95,7 +95,8 @@
 //!   [`with_capacity_and_hasher`][RingMap::with_capacity_and_hasher] instead.
 //!   A no-std compatible hasher will be needed as well, for example
 //!   from the crate `twox-hash`.
-//! - Macros [`ringmap!`] and [`ringset!`] are unavailable without `std`.
+//! - Macros [`ringmap!`] and [`ringset!`] are unavailable without `std`. Use
+//!   the macros [`ringmap_with_default!`] and [`ringset_with_default!`] instead.
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
