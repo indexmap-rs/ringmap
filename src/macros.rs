@@ -1,3 +1,40 @@
+/// Create an [`RingMap`][crate::RingMap] from a list of key-value pairs
+/// and a `BuildHasherDefault`-wrapped custom hasher.
+///
+/// ## Example
+///
+/// ```
+/// use ringmap::ringmap_with_default;
+/// use fnv::FnvHasher;
+///
+/// let map = ringmap_with_default!{
+///     FnvHasher;
+///     "a" => 1,
+///     "b" => 2,
+/// };
+/// assert_eq!(map["a"], 1);
+/// assert_eq!(map["b"], 2);
+/// assert_eq!(map.get("c"), None);
+///
+/// // "a" is the first key
+/// assert_eq!(map.keys().next(), Some(&"a"));
+/// ```
+#[macro_export]
+macro_rules! ringmap_with_default {
+    ($H:ty; $($key:expr => $value:expr,)+) => { $crate::ringmap_with_default!($H; $($key => $value),+) };
+    ($H:ty; $($key:expr => $value:expr),*) => {{
+        let builder = ::core::hash::BuildHasherDefault::<$H>::default();
+        const CAP: usize = <[()]>::len(&[$({ stringify!($key); }),*]);
+        #[allow(unused_mut)]
+        // Specify your custom `H` (must implement Default + Hasher) as the hasher:
+        let mut map = $crate::RingMap::with_capacity_and_hasher(CAP, builder);
+        $(
+            map.insert($key, $value);
+        )*
+        map
+    }};
+}
+
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 #[macro_export]
@@ -33,6 +70,43 @@ macro_rules! ringmap {
             map
         }
     };
+}
+
+/// Create an [`RingSet`][crate::RingSet] from a list of values
+/// and a `BuildHasherDefault`-wrapped custom hasher.
+///
+/// ## Example
+///
+/// ```
+/// use ringmap::ringset_with_default;
+/// use fnv::FnvHasher;
+///
+/// let set = ringset_with_default!{
+///     FnvHasher;
+///     "a",
+///     "b",
+/// };
+/// assert!(set.contains("a"));
+/// assert!(set.contains("b"));
+/// assert!(!set.contains("c"));
+///
+/// // "a" is the first value
+/// assert_eq!(set.iter().next(), Some(&"a"));
+/// ```
+#[macro_export]
+macro_rules! ringset_with_default {
+    ($H:ty; $($value:expr,)+) => { $crate::ringset_with_default!($H; $($value),+) };
+    ($H:ty; $($value:expr),*) => {{
+        let builder = ::core::hash::BuildHasherDefault::<$H>::default();
+        const CAP: usize = <[()]>::len(&[$({ stringify!($value); }),*]);
+        #[allow(unused_mut)]
+        // Specify your custom `H` (must implement Default + Hash) as the hasher:
+        let mut set = $crate::RingSet::with_capacity_and_hasher(CAP, builder);
+        $(
+            set.insert($value);
+        )*
+        set
+    }};
 }
 
 #[cfg(feature = "std")]
