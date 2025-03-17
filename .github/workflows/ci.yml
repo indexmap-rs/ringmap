@@ -38,6 +38,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Lock MSRV-compatible dependencies
+        if: matrix.rust == '1.68.0'
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+        # Note that this uses the runner's pre-installed stable cargo
+        run: cargo generate-lockfile
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
@@ -67,6 +73,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Lock MSRV-compatible dependencies
+        if: matrix.rust == '1.68.0'
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+        # Note that this uses the runner's pre-installed stable cargo
+        run: cargo generate-lockfile
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
@@ -108,7 +120,10 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-hack
-      - run: cargo +nightly hack generate-lockfile --remove-dev-deps -Z direct-minimal-versions
+      - name: Lock minimal direct dependencies
+        run: cargo +nightly hack generate-lockfile --remove-dev-deps -Z direct-minimal-versions
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
       - name: Build (nightly)
         run: cargo +nightly build --verbose --all-features
       - name: Build (MSRV)
