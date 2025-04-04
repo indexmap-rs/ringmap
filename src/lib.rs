@@ -268,12 +268,12 @@ impl core::fmt::Display for TryReserveError {
 impl std::error::Error for TryReserveError {}
 
 // NOTE: This is copied from the slice module in the std lib.
-/// The error type returned by [`get_disjoint_indices_mut`][`IndexMap::get_disjoint_indices_mut`].
+/// The error type returned by [`get_disjoint_indices_mut`][`RingMap::get_disjoint_indices_mut`].
 ///
 /// It indicates one of two possible errors:
 /// - An index is out-of-bounds.
-/// - The same index appeared multiple times in the array
-///   (or different but overlapping indices when ranges are provided).
+/// - The same index appeared multiple times in the array.
+//    (or different but overlapping indices when ranges are provided)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GetDisjointMutError {
     /// An index provided was out-of-bounds for the slice.

@@ -291,7 +291,7 @@ impl<K, V> Slice<K, V> {
             };
             if idx >= len {
                 return Err(GetDisjointMutError::IndexOutOfBounds);
-            } else if indices[i + 1..N].contains(&Some(idx)) {
+            } else if indices[..i].contains(&Some(idx)) {
                 return Err(GetDisjointMutError::OverlappingIndices);
             }
         }
