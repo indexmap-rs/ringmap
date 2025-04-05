@@ -981,6 +981,36 @@ fn disjoint_mut_multi_success() {
 }
 
 #[test]
+fn disjoint_mut_multi_success_double_ended() {
+    let mut map: RingMap<u32, u32> = RingMap::default();
+    map.push_back(2, 200);
+    map.push_back(3, 300);
+    map.push_back(4, 400);
+    map.push_front(1, 100);
+    {
+        let (head, tail) = map.as_mut_slices();
+        assert!(!head.is_empty() && !tail.is_empty());
+    }
+    assert_eq!(
+        map.get_disjoint_mut([&1, &2]),
+        [Some(&mut 100), Some(&mut 200)]
+    );
+    assert_eq!(
+        map.get_disjoint_mut([&1, &3]),
+        [Some(&mut 100), Some(&mut 300)]
+    );
+    assert_eq!(
+        map.get_disjoint_mut([&3, &1, &4, &2]),
+        [
+            Some(&mut 300),
+            Some(&mut 100),
+            Some(&mut 400),
+            Some(&mut 200)
+        ]
+    );
+}
+
+#[test]
 fn disjoint_mut_multi_success_unsized_key() {
     let mut map: RingMap<&'static str, u32> = RingMap::default();
     map.insert("1", 100);
@@ -1088,6 +1118,23 @@ fn disjoint_indices_mut_success() {
     assert_eq!(
         map.get_disjoint_indices_mut([0, 1]),
         Ok([(&1, &mut 10), (&321, &mut 20)])
+    );
+}
+
+#[test]
+fn disjoint_indices_mut_success_double_ended() {
+    let mut map: RingMap<u32, u32> = RingMap::default();
+    map.push_back(1, 10);
+    map.push_back(321, 20);
+    map.push_front(42, 0o42);
+    {
+        let (head, tail) = map.as_mut_slices();
+        assert!(!head.is_empty() && !tail.is_empty());
+    }
+    assert_eq!(map.get_disjoint_indices_mut([1]), Ok([(&1, &mut 10)]));
+    assert_eq!(
+        map.get_disjoint_indices_mut([0, 2]),
+        Ok([(&42, &mut 0o42), (&321, &mut 20)])
     );
 }
 
