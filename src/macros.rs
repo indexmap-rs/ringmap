@@ -1,5 +1,5 @@
 /// Create an [`RingMap`][crate::RingMap] from a list of key-value pairs
-/// and a `BuildHasherDefault`-wrapped custom hasher.
+/// and a [`BuildHasherDefault`][core::hash::BuildHasherDefault]-wrapped custom hasher.
 ///
 /// ## Example
 ///
@@ -73,7 +73,7 @@ macro_rules! ringmap {
 }
 
 /// Create an [`RingSet`][crate::RingSet] from a list of values
-/// and a `BuildHasherDefault`-wrapped custom hasher.
+/// and a [`BuildHasherDefault`][core::hash::BuildHasherDefault]-wrapped custom hasher.
 ///
 /// ## Example
 ///
