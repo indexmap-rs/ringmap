@@ -41,7 +41,7 @@ use std::collections::hash_map::RandomState;
 
 use self::core::RingMapCore;
 use crate::util::third;
-use crate::{Bucket, Entries, Equivalent, HashValue, TryReserveError};
+use crate::{Bucket, Entries, Equivalent, GetDisjointMutError, HashValue, TryReserveError};
 
 /// A hash table where the iteration order of the key-value pairs is independent
 /// of the hash values of the keys.
@@ -825,6 +825,33 @@ where
         }
     }
 
+    /// Return the values for `N` keys. If any key is duplicated, this function will panic.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut map = ringmap::RingMap::from([(1, 'a'), (3, 'b'), (2, 'c')]);
+    /// assert_eq!(map.get_disjoint_mut([&2, &1]), [Some(&mut 'c'), Some(&mut 'a')]);
+    /// ```
+    pub fn get_disjoint_mut<Q, const N: usize>(&mut self, keys: [&Q; N]) -> [Option<&mut V>; N]
+    where
+        Q: ?Sized + Hash + Equivalent<K>,
+    {
+        let indices = keys.map(|key| self.get_index_of(key));
+        let (head, tail) = self.as_mut_slices();
+        match Slice::get_disjoint_opt_mut(head, tail, indices) {
+            Err(GetDisjointMutError::IndexOutOfBounds) => {
+                unreachable!(
+                    "Internal error: indices should never be OOB as we got them from get_index_of"
+                );
+            }
+            Err(GetDisjointMutError::OverlappingIndices) => {
+                panic!("duplicate keys found");
+            }
+            Ok(key_values) => key_values.map(|kv_opt| kv_opt.map(|kv| kv.1)),
+        }
+    }
+
     /// Remove the key-value pair equivalent to `key` and return its value.
     ///
     /// Like [`VecDeque::remove`], the pair is removed by shifting all of the
@@ -1284,6 +1311,26 @@ impl<K, V, S> RingMap<K, V, S> {
             return None;
         }
         Some(IndexedEntry::new(&mut self.core, index))
+    }
+
+    /// Get an array of `N` key-value pairs by `N` indices
+    ///
+    /// Valid indices are *0 <= index < self.len()* and each index needs to be unique.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut map = ringmap::RingMap::from([(1, 'a'), (3, 'b'), (2, 'c')]);
+    /// assert_eq!(map.get_disjoint_indices_mut([2, 0]), Ok([(&2, &mut 'c'), (&1, &mut 'a')]));
+    /// ```
+    pub fn get_disjoint_indices_mut<const N: usize>(
+        &mut self,
+        indices: [usize; N],
+    ) -> Result<[(&K, &mut V); N], GetDisjointMutError> {
+        let indices = indices.map(Some);
+        let (head, tail) = self.as_mut_slices();
+        let key_values = Slice::get_disjoint_opt_mut(head, tail, indices)?;
+        Ok(key_values.map(Option::unwrap))
     }
 
     /// Get the first key-value pair
