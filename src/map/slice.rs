@@ -274,17 +274,21 @@ impl<K, V> Slice<K, V> {
         indices: [usize; N],
     ) -> Result<[(&K, &mut V); N], GetDisjointMutError> {
         let indices = indices.map(Some);
-        let key_values = self.get_disjoint_opt_mut(indices)?;
+        let empty_tail = Self::new_mut();
+        let key_values = Self::get_disjoint_opt_mut(self, empty_tail, indices)?;
         Ok(key_values.map(Option::unwrap))
     }
 
     #[allow(unsafe_code)]
-    pub(crate) fn get_disjoint_opt_mut<const N: usize>(
-        &mut self,
+    pub(crate) fn get_disjoint_opt_mut<'a, const N: usize>(
+        head: &mut Self,
+        tail: &mut Self,
         indices: [Option<usize>; N],
-    ) -> Result<[Option<(&K, &mut V)>; N], GetDisjointMutError> {
+    ) -> Result<[Option<(&'a K, &'a mut V)>; N], GetDisjointMutError> {
+        let mid = head.len();
+        let len = mid + tail.len();
+
         // SAFETY: Can't allow duplicate indices as we would return several mutable refs to the same data.
-        let len = self.len();
         for i in 0..N {
             if let Some(idx) = indices[i] {
                 if idx >= len {
@@ -295,14 +299,20 @@ impl<K, V> Slice<K, V> {
             }
         }
 
-        let entries_ptr = self.entries.as_mut_ptr();
+        let head_ptr = head.entries.as_mut_ptr();
+        let tail_ptr = tail.entries.as_mut_ptr();
         let out = indices.map(|idx_opt| {
             match idx_opt {
                 Some(idx) => {
-                    // SAFETY: The base pointer is valid as it comes from a slice and the reference is always
+                    // SAFETY: The base pointers are valid as they come from slices and the reference is always
                     // in-bounds & unique as we've already checked the indices above.
-                    let kv = unsafe { (*(entries_ptr.add(idx))).ref_mut() };
-                    Some(kv)
+                    unsafe {
+                        let ptr = match idx.checked_sub(mid) {
+                            None => head_ptr.add(idx),
+                            Some(tidx) => tail_ptr.add(tidx),
+                        };
+                        Some((*ptr).ref_mut())
+                    }
                 }
                 None => None,
             }

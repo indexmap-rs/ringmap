@@ -838,7 +838,8 @@ where
         Q: ?Sized + Hash + Equivalent<K>,
     {
         let indices = keys.map(|key| self.get_index_of(key));
-        match self.as_mut_slice().get_disjoint_opt_mut(indices) {
+        let (head, tail) = self.as_mut_slices();
+        match Slice::get_disjoint_opt_mut(head, tail, indices) {
             Err(GetDisjointMutError::IndexOutOfBounds) => {
                 unreachable!(
                     "Internal error: indices should never be OOB as we got them from get_index_of"
@@ -1326,7 +1327,10 @@ impl<K, V, S> RingMap<K, V, S> {
         &mut self,
         indices: [usize; N],
     ) -> Result<[(&K, &mut V); N], GetDisjointMutError> {
-        self.as_mut_slice().get_disjoint_mut(indices)
+        let indices = indices.map(Some);
+        let (head, tail) = self.as_mut_slices();
+        let key_values = Slice::get_disjoint_opt_mut(head, tail, indices)?;
+        Ok(key_values.map(Option::unwrap))
     }
 
     /// Get the first key-value pair
