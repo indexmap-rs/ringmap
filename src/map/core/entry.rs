@@ -343,6 +343,7 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     /// ***Panics*** if the `other` index is out of bounds.
     ///
     /// Computes in **O(1)** time (average).
+    #[track_caller]
     pub fn swap_indices(self, other: usize) {
         let index = self.index();
         self.into_ref_mut().swap_indices(index, other);
@@ -462,6 +463,7 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
     /// ***Panics*** if `index` is out of bounds.
     ///
     /// Computes in **O(n)** time (average).
+    #[track_caller]
     pub fn shift_insert(mut self, index: usize, value: V) -> &'a mut V {
         self.map
             .shift_insert_unique(index, self.hash, self.key, value);
@@ -623,6 +625,7 @@ impl<'a, K, V> IndexedEntry<'a, K, V> {
     /// ***Panics*** if the `other` index is out of bounds.
     ///
     /// Computes in **O(1)** time (average).
+    #[track_caller]
     pub fn swap_indices(mut self, other: usize) {
         self.map.swap_indices(self.index, other);
     }
