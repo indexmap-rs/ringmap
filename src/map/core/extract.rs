@@ -8,6 +8,7 @@ use core::mem;
 use core::ops::RangeBounds;
 
 impl<K, V> RingMapCore<K, V> {
+    #[track_caller]
     pub(crate) fn extract<R>(&mut self, range: R) -> ExtractCore<'_, K, V>
     where
         R: RangeBounds<usize>,

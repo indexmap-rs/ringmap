@@ -1050,6 +1050,7 @@ pub struct ExtractIf<'a, K, V, F> {
 }
 
 impl<K, V, F> ExtractIf<'_, K, V, F> {
+    #[track_caller]
     pub(super) fn new<R>(core: &mut RingMapCore<K, V>, range: R, pred: F) -> ExtractIf<'_, K, V, F>
     where
         R: RangeBounds<usize>,
