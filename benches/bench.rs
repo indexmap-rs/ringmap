@@ -16,14 +16,10 @@ use ringmap::RingMap;
 
 use std::collections::HashMap;
 
-use rand::rngs::SmallRng;
-use rand::seq::SliceRandom;
-use rand::SeedableRng;
-
 /// Use a consistently seeded Rng for benchmark stability
-fn small_rng() -> SmallRng {
+fn small_rng() -> fastrand::Rng {
     let seed = u64::from_le_bytes(*b"ringmap!");
-    SmallRng::seed_from_u64(seed)
+    fastrand::Rng::with_seed(seed)
 }
 
 #[bench]
@@ -304,7 +300,7 @@ where
 {
     let mut v = Vec::from_iter(iter);
     let mut rng = small_rng();
-    v.shuffle(&mut rng);
+    rng.shuffle(&mut v);
     v
 }
 
@@ -547,7 +543,7 @@ fn hashmap_merge_shuffle(b: &mut Bencher) {
     b.iter(|| {
         let mut merged = first_map.clone();
         v.extend(second_map.iter().map(|(&k, &v)| (k, v)));
-        v.shuffle(&mut rng);
+        rng.shuffle(&mut v);
         merged.extend(v.drain(..));
 
         merged
@@ -574,7 +570,7 @@ fn ringmap_merge_shuffle(b: &mut Bencher) {
     b.iter(|| {
         let mut merged = first_map.clone();
         v.extend(second_map.iter().map(|(&k, &v)| (k, v)));
-        v.shuffle(&mut rng);
+        rng.shuffle(&mut v);
         merged.extend(v.drain(..));
 
         merged
@@ -586,7 +582,7 @@ fn swap_remove_back_ringmap_100_000(b: &mut Bencher) {
     let map = IMAP_100K.clone();
     let mut keys = Vec::from_iter(map.keys().copied());
     let mut rng = small_rng();
-    keys.shuffle(&mut rng);
+    rng.shuffle(&mut keys);
 
     b.iter(|| {
         let mut map = map.clone();
@@ -603,7 +599,7 @@ fn swap_remove_front_ringmap_100_000(b: &mut Bencher) {
     let map = IMAP_100K.clone();
     let mut keys = Vec::from_iter(map.keys().copied());
     let mut rng = small_rng();
-    keys.shuffle(&mut rng);
+    rng.shuffle(&mut keys);
 
     b.iter(|| {
         let mut map = map.clone();
@@ -620,7 +616,7 @@ fn remove_ringmap_100_000_few(b: &mut Bencher) {
     let map = IMAP_100K.clone();
     let mut keys = Vec::from_iter(map.keys().copied());
     let mut rng = small_rng();
-    keys.shuffle(&mut rng);
+    rng.shuffle(&mut keys);
     keys.truncate(50);
 
     b.iter(|| {
@@ -641,7 +637,7 @@ fn remove_ringmap_2_000_full(b: &mut Bencher) {
         map.insert(key, key);
     }
     let mut rng = small_rng();
-    keys.shuffle(&mut rng);
+    rng.shuffle(&mut keys);
 
     b.iter(|| {
         let mut map = map.clone();
