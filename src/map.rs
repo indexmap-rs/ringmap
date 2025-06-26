@@ -41,7 +41,7 @@ use std::collections::hash_map::RandomState;
 
 use self::core::RingMapCore;
 use crate::util::third;
-use crate::{Bucket, Entries, Equivalent, GetDisjointMutError, HashValue, TryReserveError};
+use crate::{Bucket, Equivalent, GetDisjointMutError, HashValue, TryReserveError};
 
 /// A hash table where the iteration order of the key-value pairs is independent
 /// of the hash values of the keys.
@@ -116,32 +116,6 @@ where
     }
 }
 
-impl<K, V, S> Entries for RingMap<K, V, S> {
-    type Entry = Bucket<K, V>;
-
-    #[inline]
-    fn into_entries(self) -> VecDeque<Self::Entry> {
-        self.core.into_entries()
-    }
-
-    #[inline]
-    fn as_entries(&self) -> &VecDeque<Self::Entry> {
-        self.core.as_entries()
-    }
-
-    #[inline]
-    fn as_entries_mut(&mut self) -> &mut VecDeque<Self::Entry> {
-        self.core.as_entries_mut()
-    }
-
-    fn with_contiguous_entries<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut [Self::Entry]),
-    {
-        self.core.with_contiguous_entries(f);
-    }
-}
-
 impl<K, V, S> fmt::Debug for RingMap<K, V, S>
 where
     K: fmt::Debug,
@@ -204,6 +178,28 @@ impl<K, V, S> RingMap<K, V, S> {
             core: RingMapCore::new(),
             hash_builder,
         }
+    }
+
+    #[inline]
+    pub(crate) fn into_entries(self) -> VecDeque<Bucket<K, V>> {
+        self.core.into_entries()
+    }
+
+    #[inline]
+    pub(crate) fn as_entries(&self) -> &VecDeque<Bucket<K, V>> {
+        self.core.as_entries()
+    }
+
+    #[inline]
+    pub(crate) fn as_entries_mut(&mut self) -> &mut VecDeque<Bucket<K, V>> {
+        self.core.as_entries_mut()
+    }
+
+    pub(crate) fn with_contiguous_entries<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut [Bucket<K, V>]),
+    {
+        self.core.with_contiguous_entries(f);
     }
 
     /// Return the number of elements the map can hold without reallocating.

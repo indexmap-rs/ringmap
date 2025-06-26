@@ -28,7 +28,7 @@ use core::fmt;
 use core::hash::{BuildHasher, Hash, Hasher};
 use core::ops::{BitAnd, BitOr, BitXor, Index, RangeBounds, Sub};
 
-use super::{Entries, Equivalent, RingMap};
+use super::{Equivalent, RingMap};
 
 type Bucket<T> = super::Bucket<T, ()>;
 
@@ -105,32 +105,6 @@ where
     }
 }
 
-impl<T, S> Entries for RingSet<T, S> {
-    type Entry = Bucket<T>;
-
-    #[inline]
-    fn into_entries(self) -> VecDeque<Self::Entry> {
-        self.map.into_entries()
-    }
-
-    #[inline]
-    fn as_entries(&self) -> &VecDeque<Self::Entry> {
-        self.map.as_entries()
-    }
-
-    #[inline]
-    fn as_entries_mut(&mut self) -> &mut VecDeque<Self::Entry> {
-        self.map.as_entries_mut()
-    }
-
-    fn with_contiguous_entries<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut [Self::Entry]),
-    {
-        self.map.with_contiguous_entries(f);
-    }
-}
-
 impl<T, S> fmt::Debug for RingSet<T, S>
 where
     T: fmt::Debug,
@@ -187,6 +161,23 @@ impl<T, S> RingSet<T, S> {
         RingSet {
             map: RingMap::with_hasher(hash_builder),
         }
+    }
+
+    #[inline]
+    pub(crate) fn into_entries(self) -> VecDeque<Bucket<T>> {
+        self.map.into_entries()
+    }
+
+    #[inline]
+    pub(crate) fn as_entries(&self) -> &VecDeque<Bucket<T>> {
+        self.map.as_entries()
+    }
+
+    pub(crate) fn with_contiguous_entries<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut [Bucket<T>]),
+    {
+        self.map.with_contiguous_entries(f);
     }
 
     /// Return the number of elements the set can hold without reallocating.
@@ -1045,7 +1036,7 @@ impl<T, S> RingSet<T, S> {
     /// Rearranges the internal storage of this map so it is one contiguous slice,
     /// which is then returned.
     pub fn make_contiguous(&mut self) -> &Slice<T> {
-        Slice::from_slice(self.as_entries_mut().make_contiguous())
+        Slice::from_slice(self.map.as_entries_mut().make_contiguous())
     }
 
     /// Converts into a boxed slice of all the values in the set.

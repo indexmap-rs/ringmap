@@ -1,5 +1,5 @@
 use super::core::RingMapCore;
-use super::{Bucket, Entries, RingMap};
+use super::{Bucket, RingMap};
 
 use alloc::collections::vec_deque::{self, VecDeque};
 use core::hash::{BuildHasher, Hash};

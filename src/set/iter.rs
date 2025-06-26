@@ -1,4 +1,4 @@
-use super::{Bucket, Entries, RingSet};
+use super::{Bucket, RingSet};
 use crate::map::Buckets;
 
 use alloc::collections::vec_deque::{self, VecDeque};
