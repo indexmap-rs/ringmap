@@ -106,8 +106,6 @@ extern crate alloc;
 #[macro_use]
 extern crate std;
 
-use alloc::collections::vec_deque::{self, VecDeque};
-
 mod arbitrary;
 #[macro_use]
 mod macros;
@@ -199,16 +197,6 @@ impl<K, V> Bucket<K, V> {
     fn muts(&mut self) -> (&mut K, &mut V) {
         (&mut self.key, &mut self.value)
     }
-}
-
-trait Entries {
-    type Entry;
-    fn into_entries(self) -> VecDeque<Self::Entry>;
-    fn as_entries(&self) -> &VecDeque<Self::Entry>;
-    fn as_entries_mut(&mut self) -> &mut VecDeque<Self::Entry>;
-    fn with_contiguous_entries<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut [Self::Entry]);
 }
 
 /// The error type for [`try_reserve`][RingMap::try_reserve] methods.

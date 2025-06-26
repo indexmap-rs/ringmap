@@ -119,6 +119,7 @@ impl<K, V> Slice<K, V> {
     /// Divides one slice into two at an index.
     ///
     /// ***Panics*** if `index > len`.
+    #[track_caller]
     pub fn split_at(&self, index: usize) -> (&Self, &Self) {
         let (first, second) = self.entries.split_at(index);
         (Self::from_slice(first), Self::from_slice(second))
@@ -127,6 +128,7 @@ impl<K, V> Slice<K, V> {
     /// Divides one mutable slice into two at an index.
     ///
     /// ***Panics*** if `index > len`.
+    #[track_caller]
     pub fn split_at_mut(&mut self, index: usize) -> (&mut Self, &mut Self) {
         let (first, second) = self.entries.split_at_mut(index);
         (Self::from_mut_slice(first), Self::from_mut_slice(second))
@@ -562,6 +564,12 @@ mod tests {
         }
     }
 
+    fn as_mut_slice<K, V>(map: &mut RingMap<K, V>) -> &mut Slice<K, V> {
+        let (slice, tail) = map.as_mut_slices();
+        assert!(tail.is_empty());
+        slice
+    }
+
     #[test]
     fn slice_index_mut() {
         fn check_mut(vec_slice: &[(i32, i32)], map_slice: &mut Slice<i32, i32>) {
@@ -578,8 +586,7 @@ mod tests {
         let vec: Vec<(i32, i32)> = (0..10).map(|i| (i, i * i)).collect();
         let mut map: RingMap<i32, i32> = vec.iter().cloned().collect();
         let mut map2 = map.clone();
-        let (slice, tail) = map2.as_mut_slices();
-        assert!(tail.is_empty());
+        let slice = as_mut_slice(&mut map2);
 
         // RangeFull
         check_mut(&vec[..], &mut slice[..]);
@@ -611,5 +618,124 @@ mod tests {
                 check_mut(&vec[i..=j], &mut slice[i..=j]);
             }
         }
+    }
+
+    #[test]
+    fn slice_new() {
+        let slice: &Slice<i32, i32> = Slice::new();
+        assert!(slice.is_empty());
+        assert_eq!(slice.len(), 0);
+    }
+
+    #[test]
+    fn slice_new_mut() {
+        let slice: &mut Slice<i32, i32> = Slice::new_mut();
+        assert!(slice.is_empty());
+        assert_eq!(slice.len(), 0);
+    }
+
+    #[test]
+    fn slice_get_index_mut() {
+        let mut map: RingMap<i32, i32> = (0..10).map(|i| (i, i * i)).collect();
+        let slice: &mut Slice<i32, i32> = as_mut_slice(&mut map);
+
+        {
+            let (key, value) = slice.get_index_mut(0).unwrap();
+            assert_eq!(*key, 0);
+            assert_eq!(*value, 0);
+
+            *value = 11;
+        }
+
+        assert_eq!(slice[0], 11);
+
+        {
+            let result = slice.get_index_mut(11);
+            assert!(result.is_none());
+        }
+    }
+
+    #[test]
+    fn slice_split_first() {
+        let slice: &mut Slice<i32, i32> = Slice::new_mut();
+        let result = slice.split_first();
+        assert!(result.is_none());
+
+        let mut map: RingMap<i32, i32> = (0..10).map(|i| (i, i * i)).collect();
+        let slice: &mut Slice<i32, i32> = as_mut_slice(&mut map);
+
+        {
+            let (first, rest) = slice.split_first().unwrap();
+            assert_eq!(first, (&0, &0));
+            assert_eq!(rest.len(), 9);
+        }
+        assert_eq!(slice.len(), 10);
+    }
+
+    #[test]
+    fn slice_split_first_mut() {
+        let slice: &mut Slice<i32, i32> = Slice::new_mut();
+        let result = slice.split_first_mut();
+        assert!(result.is_none());
+
+        let mut map: RingMap<i32, i32> = (0..10).map(|i| (i, i * i)).collect();
+        let slice: &mut Slice<i32, i32> = as_mut_slice(&mut map);
+
+        {
+            let (first, rest) = slice.split_first_mut().unwrap();
+            assert_eq!(first, (&0, &mut 0));
+            assert_eq!(rest.len(), 9);
+
+            *first.1 = 11;
+        }
+        assert_eq!(slice.len(), 10);
+        assert_eq!(slice[0], 11);
+    }
+
+    #[test]
+    fn slice_split_last() {
+        let slice: &mut Slice<i32, i32> = Slice::new_mut();
+        let result = slice.split_last();
+        assert!(result.is_none());
+
+        let mut map: RingMap<i32, i32> = (0..10).map(|i| (i, i * i)).collect();
+        let slice: &mut Slice<i32, i32> = as_mut_slice(&mut map);
+
+        {
+            let (last, rest) = slice.split_last().unwrap();
+            assert_eq!(last, (&9, &81));
+            assert_eq!(rest.len(), 9);
+        }
+        assert_eq!(slice.len(), 10);
+    }
+
+    #[test]
+    fn slice_split_last_mut() {
+        let slice: &mut Slice<i32, i32> = Slice::new_mut();
+        let result = slice.split_last_mut();
+        assert!(result.is_none());
+
+        let mut map: RingMap<i32, i32> = (0..10).map(|i| (i, i * i)).collect();
+        let slice: &mut Slice<i32, i32> = as_mut_slice(&mut map);
+
+        {
+            let (last, rest) = slice.split_last_mut().unwrap();
+            assert_eq!(last, (&9, &mut 81));
+            assert_eq!(rest.len(), 9);
+
+            *last.1 = 100;
+        }
+
+        assert_eq!(slice.len(), 10);
+        assert_eq!(slice[slice.len() - 1], 100);
+    }
+
+    #[test]
+    fn slice_get_range() {
+        let mut map: RingMap<i32, i32> = (0..10).map(|i| (i, i * i)).collect();
+        let slice: &mut Slice<i32, i32> = as_mut_slice(&mut map);
+        let subslice = slice.get_range(3..6).unwrap();
+        assert_eq!(subslice.len(), 3);
+        assert_eq!(subslice, &[(3, 9), (4, 16), (5, 25)]);
     }
 }

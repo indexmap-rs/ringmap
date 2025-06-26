@@ -17,7 +17,6 @@ use core::ops::RangeBounds;
 
 use crate::map::Slice;
 use crate::Bucket;
-use crate::Entries;
 use crate::RingMap;
 
 impl<K, V, S> IntoParallelIterator for RingMap<K, V, S>

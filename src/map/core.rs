@@ -8,24 +8,25 @@
 //! However, we should probably not let this show in the public API or docs.
 
 mod entry;
+mod extract;
 
 pub mod raw_entry_v1;
 
 use hashbrown::hash_table;
 
-use crate::vec_deque::{self, VecDeque};
-use crate::TryReserveError;
+use alloc::collections::vec_deque::{self, VecDeque};
 use core::cmp::Ordering;
 use core::ops::RangeBounds;
 use core::{iter, mem, slice};
 
 use crate::util::simplify_range;
-use crate::{Bucket, Equivalent, HashValue};
+use crate::{Bucket, Equivalent, HashValue, TryReserveError};
 
 type Indices = hash_table::HashTable<OffsetIndex>;
 type Entries<K, V> = VecDeque<Bucket<K, V>>;
 
 pub use entry::{Entry, IndexedEntry, OccupiedEntry, VacantEntry};
+pub(crate) use extract::ExtractCore;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct OffsetIndex {
@@ -180,33 +181,6 @@ where
     }
 }
 
-impl<K, V> crate::Entries for RingMapCore<K, V> {
-    type Entry = Bucket<K, V>;
-
-    #[inline]
-    fn into_entries(self) -> Entries<K, V> {
-        self.entries
-    }
-
-    #[inline]
-    fn as_entries(&self) -> &Entries<K, V> {
-        &self.entries
-    }
-
-    #[inline]
-    fn as_entries_mut(&mut self) -> &mut Entries<K, V> {
-        &mut self.entries
-    }
-
-    fn with_contiguous_entries<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut [Self::Entry]),
-    {
-        f(self.entries.make_contiguous());
-        self.rebuild_hash_table();
-    }
-}
-
 impl<K, V> RingMapCore<K, V> {
     /// The maximum capacity before the `entries` allocation would exceed `isize::MAX`.
     const MAX_ENTRIES_CAPACITY: usize = (isize::MAX as usize) / mem::size_of::<Bucket<K, V>>();
@@ -235,7 +209,31 @@ impl<K, V> RingMapCore<K, V> {
     }
 
     #[inline]
+    pub(crate) fn into_entries(self) -> Entries<K, V> {
+        self.entries
+    }
+
+    #[inline]
+    pub(crate) fn as_entries(&self) -> &Entries<K, V> {
+        &self.entries
+    }
+
+    #[inline]
+    pub(crate) fn as_entries_mut(&mut self) -> &mut Entries<K, V> {
+        &mut self.entries
+    }
+
+    pub(crate) fn with_contiguous_entries<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut [Bucket<K, V>]),
+    {
+        f(self.entries.make_contiguous());
+        self.rebuild_hash_table();
+    }
+
+    #[inline]
     pub(crate) fn len(&self) -> usize {
+        debug_assert_eq!(self.entries.len(), self.indices.len());
         self.indices.len()
     }
 

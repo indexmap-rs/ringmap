@@ -1,7 +1,7 @@
 use core::hash::{BuildHasher, Hash};
 
 use super::{
-    Bucket, Entries, Entry, Equivalent, IndexedEntry, IterMut2, OccupiedEntry, RingMap, VacantEntry,
+    Bucket, Entry, Equivalent, IndexedEntry, IterMut2, OccupiedEntry, RingMap, VacantEntry,
 };
 
 /// Opt-in mutable access to [`RingMap`] keys.

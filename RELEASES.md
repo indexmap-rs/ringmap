@@ -1,5 +1,11 @@
 # Releases
 
+## 0.1.4 (2025-06-26)
+
+- Added `extract_if` methods to `RingMap` and `RingSet`, similar to the
+  methods for `HashMap` and `HashSet` with ranges like `Vec::extract_if`.
+- Added more `#[track_caller]` annotations to functions that may panic.
+
 ## 0.1.3 (2025-04-04)
 
 - Added a `get_disjoint_mut` method to `RingMap`, matching Rust 1.86's

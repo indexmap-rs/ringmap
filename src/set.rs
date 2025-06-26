@@ -8,7 +8,7 @@ mod slice;
 mod tests;
 
 pub use self::iter::{
-    Difference, Drain, Intersection, IntoIter, Iter, Splice, SymmetricDifference, Union,
+    Difference, Drain, ExtractIf, Intersection, IntoIter, Iter, Splice, SymmetricDifference, Union,
 };
 pub use self::mutable::MutableValues;
 pub use self::slice::Slice;
@@ -28,7 +28,7 @@ use core::fmt;
 use core::hash::{BuildHasher, Hash, Hasher};
 use core::ops::{BitAnd, BitOr, BitXor, Index, RangeBounds, Sub};
 
-use super::{Entries, Equivalent, RingMap};
+use super::{Equivalent, RingMap};
 
 type Bucket<T> = super::Bucket<T, ()>;
 
@@ -105,32 +105,6 @@ where
     }
 }
 
-impl<T, S> Entries for RingSet<T, S> {
-    type Entry = Bucket<T>;
-
-    #[inline]
-    fn into_entries(self) -> VecDeque<Self::Entry> {
-        self.map.into_entries()
-    }
-
-    #[inline]
-    fn as_entries(&self) -> &VecDeque<Self::Entry> {
-        self.map.as_entries()
-    }
-
-    #[inline]
-    fn as_entries_mut(&mut self) -> &mut VecDeque<Self::Entry> {
-        self.map.as_entries_mut()
-    }
-
-    fn with_contiguous_entries<F>(&mut self, f: F)
-    where
-        F: FnOnce(&mut [Self::Entry]),
-    {
-        self.map.with_contiguous_entries(f);
-    }
-}
-
 impl<T, S> fmt::Debug for RingSet<T, S>
 where
     T: fmt::Debug,
@@ -187,6 +161,23 @@ impl<T, S> RingSet<T, S> {
         RingSet {
             map: RingMap::with_hasher(hash_builder),
         }
+    }
+
+    #[inline]
+    pub(crate) fn into_entries(self) -> VecDeque<Bucket<T>> {
+        self.map.into_entries()
+    }
+
+    #[inline]
+    pub(crate) fn as_entries(&self) -> &VecDeque<Bucket<T>> {
+        self.map.as_entries()
+    }
+
+    pub(crate) fn with_contiguous_entries<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut [Bucket<T>]),
+    {
+        self.map.with_contiguous_entries(f);
     }
 
     /// Return the number of elements the set can hold without reallocating.
@@ -256,6 +247,52 @@ impl<T, S> RingSet<T, S> {
         R: RangeBounds<usize>,
     {
         Drain::new(self.map.core.drain(range))
+    }
+
+    /// Creates an iterator which uses a closure to determine if a value should be removed,
+    /// for all values in the given range.
+    ///
+    /// If the closure returns true, then the value is removed and yielded.
+    /// If the closure returns false, the value will remain in the list and will not be yielded
+    /// by the iterator.
+    ///
+    /// The range may be any type that implements [`RangeBounds<usize>`],
+    /// including all of the `std::ops::Range*` types, or even a tuple pair of
+    /// `Bound` start and end values. To check the entire set, use `RangeFull`
+    /// like `set.extract_if(.., predicate)`.
+    ///
+    /// If the returned `ExtractIf` is not exhausted, e.g. because it is dropped without iterating
+    /// or the iteration short-circuits, then the remaining elements will be retained.
+    /// Use [`retain`] with a negated predicate if you do not need the returned iterator.
+    ///
+    /// [`retain`]: RingSet::retain
+    ///
+    /// ***Panics*** if the starting point is greater than the end point or if
+    /// the end point is greater than the length of the set.
+    ///
+    /// # Examples
+    ///
+    /// Splitting a set into even and odd values, reusing the original set:
+    ///
+    /// ```
+    /// use ringmap::RingSet;
+    ///
+    /// let mut set: RingSet<i32> = (0..8).collect();
+    /// let extracted: RingSet<i32> = set.extract_if(.., |v| v % 2 == 0).collect();
+    ///
+    /// let evens = extracted.into_iter().collect::<Vec<_>>();
+    /// let odds = set.into_iter().collect::<Vec<_>>();
+    ///
+    /// assert_eq!(evens, vec![0, 2, 4, 6]);
+    /// assert_eq!(odds, vec![1, 3, 5, 7]);
+    /// ```
+    #[track_caller]
+    pub fn extract_if<F, R>(&mut self, range: R, pred: F) -> ExtractIf<'_, T, F>
+    where
+        F: FnMut(&T) -> bool,
+        R: RangeBounds<usize>,
+    {
+        ExtractIf::new(&mut self.map.core, range, pred)
     }
 
     /// Splits the collection into two at the given index.
@@ -1045,7 +1082,7 @@ impl<T, S> RingSet<T, S> {
     /// Rearranges the internal storage of this map so it is one contiguous slice,
     /// which is then returned.
     pub fn make_contiguous(&mut self) -> &Slice<T> {
-        Slice::from_slice(self.as_entries_mut().make_contiguous())
+        Slice::from_slice(self.map.as_entries_mut().make_contiguous())
     }
 
     /// Converts into a boxed slice of all the values in the set.
@@ -1182,12 +1219,14 @@ impl<T, S> Index<usize> for RingSet<T, S> {
     ///
     /// ***Panics*** if `index` is out of bounds.
     fn index(&self, index: usize) -> &T {
-        self.get_index(index).unwrap_or_else(|| {
+        if let Some(value) = self.get_index(index) {
+            value
+        } else {
             panic!(
                 "index out of bounds: the len is {len} but the index is {index}",
                 len = self.len()
             );
-        })
+        }
     }
 }
 
