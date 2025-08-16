@@ -502,6 +502,13 @@ impl<K, V> RingMapCore<K, V> {
         }
     }
 
+    /// Replaces the key at the given index,
+    /// *without* checking whether it already exists.
+    #[track_caller]
+    pub(crate) fn replace_index_unique(&mut self, index: usize, hash: HashValue, key: K) -> K {
+        self.borrow_mut().replace_index_unique(index, hash, key).0
+    }
+
     /// Remove an entry by shifting all entries that follow it
     pub(crate) fn shift_remove_full<Q>(&mut self, hash: HashValue, key: &Q) -> Option<(usize, K, V)>
     where
@@ -803,6 +810,33 @@ impl<'a, K, V> RefMut<'a, K, V> {
         OccupiedEntry::new(self.entries, self.offset, entry)
     }
 
+    /// Replaces the key at the given index,
+    /// *without* checking whether it already exists.
+    #[track_caller]
+    fn replace_index_unique(
+        self,
+        index: usize,
+        hash: HashValue,
+        key: K,
+    ) -> (K, OccupiedEntry<'a, K, V>) {
+        // NB: This removal and insertion isn't "no grow" (with unreachable hasher)
+        // because hashbrown's tombstones might force a resize anyway.
+        let offset = *self.offset;
+        let oi = OffsetIndex::new(index, offset);
+        erase_index(self.indices, offset, self.entries[index].hash, index);
+        let table_entry =
+            self.indices
+                .insert_unique(hash.get(), oi, get_hash(&self.entries, offset));
+
+        let entry = &mut self.entries[index];
+        entry.hash = hash;
+        let old_key = mem::replace(&mut entry.key, key);
+        let occupied = OccupiedEntry::new(self.entries, self.offset, table_entry);
+        (old_key, occupied)
+    }
+
+    /// Insert a key-value pair in `entries` at a particular index,
+    /// *without* checking whether it already exists.
     fn shift_insert_unique(&mut self, index: usize, hash: HashValue, key: K, value: V) {
         let end = self.indices.len();
         assert!(index <= end);
