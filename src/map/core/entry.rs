@@ -467,12 +467,14 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
     /// pair is inserted at that position regardless.
     ///
     /// Computes in **O(n)** time (average).
-    pub fn insert_sorted_by<F>(self, value: V, cmp: F) -> (usize, &'a mut V)
+    pub fn insert_sorted_by<F>(self, value: V, mut cmp: F) -> (usize, &'a mut V)
     where
         K: Ord,
-        F: FnMut(&K, &V) -> Ordering,
+        F: FnMut(&K, &V, &K, &V) -> Ordering,
     {
-        let (Ok(i) | Err(i)) = self.map.binary_search_by(cmp);
+        let (Ok(i) | Err(i)) = self
+            .map
+            .binary_search_by(|k, v| cmp(k, v, &self.key, &value));
         (i, self.shift_insert(i, value))
     }
 

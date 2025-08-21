@@ -1346,14 +1346,14 @@ fn insert_sorted_by() {
     let mut values = [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)];
     let mut map: RingMap<i32, i32> = RingMap::new();
     for (key, value) in values {
-        let (_, old) = map.insert_sorted_by(key, value, |probe, _| key.cmp(probe));
+        let (_, old) = map.insert_sorted_by(key, value, |key1, _, key2, _| key2.cmp(key1));
         assert_eq!(old, None);
     }
     values.reverse();
     assert_eq!(values, *map.make_contiguous());
 
     for (key, value) in &mut values {
-        let (_, old) = map.insert_sorted_by(*key, -*value, |probe, _| (*key).cmp(probe));
+        let (_, old) = map.insert_sorted_by(*key, -*value, |key1, _, key2, _| key2.cmp(key1));
         assert_eq!(old, Some(*value));
         *value = -*value;
     }
