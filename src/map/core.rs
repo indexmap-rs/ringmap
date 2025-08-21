@@ -1128,6 +1128,14 @@ impl<'a, K, V> RefMut<'a, K, V> {
     {
         self.entries.binary_search_by(move |a| f(&a.key, &a.value))
     }
+
+    fn binary_search_by_key<'b, B, F>(&'b self, b: &B, mut f: F) -> Result<usize, usize>
+    where
+        F: FnMut(&'b K, &'b V) -> B,
+        B: Ord,
+    {
+        self.binary_search_by(|k, v| f(k, v).cmp(b))
+    }
 }
 
 #[test]
