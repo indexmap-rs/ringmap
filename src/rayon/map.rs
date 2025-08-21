@@ -547,7 +547,7 @@ where
     K: Send,
     V: Send,
 {
-    /// Sort the map’s key-value pairs in parallel, by the default ordering of the keys.
+    /// Sort the map's key-value pairs in parallel, by the default ordering of the keys.
     pub fn par_sort_keys(&mut self)
     where
         K: Ord,
@@ -557,7 +557,7 @@ where
         });
     }
 
-    /// Sort the map’s key-value pairs in place and in parallel, using the comparison
+    /// Sort the map's key-value pairs in place and in parallel, using the comparison
     /// function `cmp`.
     ///
     /// The comparison function receives two key and value pairs to compare (you
@@ -621,7 +621,7 @@ where
         IntoParIter { entries }
     }
 
-    /// Sort the map’s key-value pairs in place and in parallel, using a sort-key extraction
+    /// Sort the map's key-value pairs in place and in parallel, using a sort-key extraction
     /// function.
     pub fn par_sort_by_cached_key<T, F>(&mut self, sort_key: F)
     where
