@@ -1136,6 +1136,55 @@ impl<T, S> RingSet<T, S> {
         self.map.binary_search_by_key(b, move |key, ()| f(key))
     }
 
+    /// Checks if the values of this set are sorted.
+    #[inline]
+    pub fn is_sorted(&self) -> bool
+    where
+        T: PartialOrd,
+    {
+        // TODO(MSRV 1.82): self.iter().is_sorted()
+        let (head, tail) = self.as_slices();
+        head.is_sorted()
+            && match (head.last(), tail.first()) {
+                (Some(v1), Some(v2)) => v1 <= v2,
+                _ => true,
+            }
+            && tail.is_sorted()
+    }
+
+    /// Checks if this set is sorted using the given comparator function.
+    #[inline]
+    pub fn is_sorted_by<'a, F>(&'a self, mut cmp: F) -> bool
+    where
+        F: FnMut(&'a T, &'a T) -> bool,
+    {
+        // TODO(MSRV 1.82): self.iter().is_sorted_by(|&v1, &v2| cmp(v1, v2))
+        let (head, tail) = self.as_slices();
+        head.is_sorted_by(&mut cmp)
+            && match (head.last(), tail.first()) {
+                (Some(v1), Some(v2)) => cmp(v1, v2),
+                _ => true,
+            }
+            && tail.is_sorted_by(&mut cmp)
+    }
+
+    /// Checks if this set is sorted using the given sort-key function.
+    #[inline]
+    pub fn is_sorted_by_key<'a, F, K>(&'a self, mut sort_key: F) -> bool
+    where
+        F: FnMut(&'a T) -> K,
+        K: PartialOrd,
+    {
+        // TODO(MSRV 1.82): self.iter().is_sorted_by_key(sort_key)
+        let (head, tail) = self.as_slices();
+        head.is_sorted_by_key(&mut sort_key)
+            && match (head.last(), tail.first()) {
+                (Some(v1), Some(v2)) => sort_key(v1) <= sort_key(v2),
+                _ => true,
+            }
+            && tail.is_sorted_by_key(&mut sort_key)
+    }
+
     /// Returns the index of the partition point of a sorted set according to the given predicate
     /// (the index of the first element of the second partition).
     ///

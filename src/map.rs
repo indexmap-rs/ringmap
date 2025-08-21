@@ -1384,6 +1384,57 @@ impl<K, V, S> RingMap<K, V, S> {
         self.core.binary_search_by_key(b, f)
     }
 
+    /// Checks if the keys of this map are sorted.
+    #[inline]
+    pub fn is_sorted(&self) -> bool
+    where
+        K: PartialOrd,
+    {
+        // TODO(MSRV 1.82): self.keys().is_sorted()
+        let (head, tail) = self.as_slices();
+        head.is_sorted()
+            && match (head.last(), tail.first()) {
+                (Some((k1, _)), Some((k2, _))) => k1 <= k2,
+                _ => true,
+            }
+            && tail.is_sorted()
+    }
+
+    /// Checks if this map is sorted using the given comparator function.
+    #[inline]
+    pub fn is_sorted_by<'a, F>(&'a self, mut cmp: F) -> bool
+    where
+        F: FnMut(&'a K, &'a V, &'a K, &'a V) -> bool,
+    {
+        // TODO(MSRV 1.82): self.iter()
+        //    .is_sorted_by(move |&(k1, v1), &(k2, v2)| cmp(k1, v1, k2, v2))
+        let (head, tail) = self.as_slices();
+        head.is_sorted_by(&mut cmp)
+            && match (head.last(), tail.first()) {
+                (Some((k1, v1)), Some((k2, v2))) => cmp(k1, v1, k2, v2),
+                _ => true,
+            }
+            && tail.is_sorted_by(&mut cmp)
+    }
+
+    /// Checks if this map is sorted using the given sort-key function.
+    #[inline]
+    pub fn is_sorted_by_key<'a, F, T>(&'a self, mut sort_key: F) -> bool
+    where
+        F: FnMut(&'a K, &'a V) -> T,
+        T: PartialOrd,
+    {
+        // TODO(MSRV 1.82): self.iter()
+        //     .is_sorted_by_key(move |(k1, v1)| sort_key(k1, v1))
+        let (head, tail) = self.as_slices();
+        head.is_sorted_by_key(&mut sort_key)
+            && match (head.last(), tail.first()) {
+                (Some((k1, v1)), Some((k2, v2))) => sort_key(k1, v1) <= sort_key(k2, v2),
+                _ => true,
+            }
+            && tail.is_sorted_by_key(&mut sort_key)
+    }
+
     /// Returns the index of the partition point of a sorted map according to the given predicate
     /// (the index of the first element of the second partition).
     ///
