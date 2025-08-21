@@ -1327,14 +1327,14 @@ fn insert_sorted_by_key() {
     let mut values = [(-1, 8), (3, 18), (-27, 2), (-2, 5)];
     let mut map: RingMap<i32, i32> = RingMap::new();
     for (key, value) in values {
-        let (_, old) = map.insert_sorted_by_key(|k, _| k.abs(), key, value);
+        let (_, old) = map.insert_sorted_by_key(key, value, |k, _| k.abs());
         assert_eq!(old, None);
     }
     values.sort_by_key(|(key, _)| key.abs());
     assert_eq!(values, *map.make_contiguous());
 
     for (key, value) in &mut values {
-        let (_, old) = map.insert_sorted_by_key(|k, _| k.abs(), *key, -*value);
+        let (_, old) = map.insert_sorted_by_key(*key, -*value, |k, _| k.abs());
         assert_eq!(old, Some(*value));
         *value = -*value;
     }
@@ -1346,14 +1346,14 @@ fn insert_sorted_by() {
     let mut values = [(1, 1), (2, 2), (3, 3), (4, 4), (5, 5)];
     let mut map: RingMap<i32, i32> = RingMap::new();
     for (key, value) in values {
-        let (_, old) = map.insert_sorted_by(|probe, _| key.cmp(probe), key, value);
+        let (_, old) = map.insert_sorted_by(key, value, |probe, _| key.cmp(probe));
         assert_eq!(old, None);
     }
     values.reverse();
     assert_eq!(values, *map.make_contiguous());
 
     for (key, value) in &mut values {
-        let (_, old) = map.insert_sorted_by(|probe, _| (*key).cmp(probe), *key, -*value);
+        let (_, old) = map.insert_sorted_by(*key, -*value, |probe, _| (*key).cmp(probe));
         assert_eq!(old, Some(*value));
         *value = -*value;
     }
