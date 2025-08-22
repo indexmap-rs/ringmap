@@ -1,5 +1,17 @@
 # Releases
 
+## 0.1.5 (2025-08-22)
+
+- Added `insert_sorted_by` and `insert_sorted_by_key` methods to `RingMap`,
+  `RingSet`, and `VacantEntry`, like customizable versions of `insert_sorted`.
+- Added `is_sorted`, `is_sorted_by`, and `is_sorted_by_key` methods to
+  `RingMap` and `RingSet`, as well as their `Slice` counterparts.
+- Added `sort_by_key` and `sort_unstable_by_key` methods to `RingMap` and
+  `RingSet`, as well as parallel counterparts.
+- Added `replace_index` methods to `RingMap`, `RingSet`, and `VacantEntry`
+  to replace the key (or set value) at a given index.
+- Added optional `sval` serialization support.
+
 ## 0.1.4 (2025-06-26)
 
 - Added `extract_if` methods to `RingMap` and `RingSet`, similar to the
