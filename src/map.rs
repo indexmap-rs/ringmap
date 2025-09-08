@@ -863,7 +863,7 @@ where
         self.get_index_of(key).is_some()
     }
 
-    /// Return a reference to the value stored for `key`, if it is present,
+    /// Return a reference to the stored value for `key`, if it is present,
     /// else `None`.
     ///
     /// Computes in **O(1)** time (average).
@@ -879,7 +879,7 @@ where
         }
     }
 
-    /// Return references to the key-value pair stored for `key`,
+    /// Return references to the stored key-value pair for the lookup `key`,
     /// if it is present, else `None`.
     ///
     /// Computes in **O(1)** time (average).
@@ -895,7 +895,10 @@ where
         }
     }
 
-    /// Return item index, key and value
+    /// Return the index with references to the stored key-value pair for the
+    /// lookup `key`, if it is present, else `None`.
+    ///
+    /// Computes in **O(1)** time (average).
     pub fn get_full<Q>(&self, key: &Q) -> Option<(usize, &K, &V)>
     where
         Q: ?Sized + Hash + Equivalent<K>,
@@ -908,7 +911,7 @@ where
         }
     }
 
-    /// Return item index, if it exists in the map
+    /// Return the item index for `key`, if it is present, else `None`.
     ///
     /// Computes in **O(1)** time (average).
     pub fn get_index_of<Q>(&self, key: &Q) -> Option<usize>
@@ -925,6 +928,10 @@ where
         }
     }
 
+    /// Return a mutable reference to the stored value for `key`,
+    /// if it is present, else `None`.
+    ///
+    /// Computes in **O(1)** time (average).
     pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
     where
         Q: ?Sized + Hash + Equivalent<K>,
@@ -937,8 +944,8 @@ where
         }
     }
 
-    /// Return references to the key-value pair stored for `key`,
-    /// if it is present, else `None`.
+    /// Return a reference and mutable references to the stored key-value pair
+    /// for the lookup `key`, if it is present, else `None`.
     ///
     /// Computes in **O(1)** time (average).
     pub fn get_key_value_mut<Q>(&mut self, key: &Q) -> Option<(&K, &mut V)>
@@ -953,6 +960,10 @@ where
         }
     }
 
+    /// Return the index with a reference and mutable reference to the stored
+    /// key-value pair for the lookup `key`, if it is present, else `None`.
+    ///
+    /// Computes in **O(1)** time (average).
     pub fn get_full_mut<Q>(&mut self, key: &Q) -> Option<(usize, &K, &mut V)>
     where
         Q: ?Sized + Hash + Equivalent<K>,
