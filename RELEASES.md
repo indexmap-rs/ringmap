@@ -1,5 +1,10 @@
 # Releases
 
+## 0.1.6 (2025-09-08)
+
+- Added a `get_key_value_mut` method to `RingMap`.
+- Removed the unnecessary `Ord` bound on `insert_sorted_by` methods.
+
 ## 0.1.5 (2025-08-22)
 
 - Added `insert_sorted_by` and `insert_sorted_by_key` methods to `RingMap`,
