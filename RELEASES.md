@@ -1,5 +1,9 @@
 # Releases
 
+## 0.1.8 (2025-09-18)
+
+- Updated the `hashbrown` dependency to version 0.16.
+
 ## 0.1.7 (2025-09-15)
 
 - Switched the "serde" feature to depend on `serde_core`, improving build
