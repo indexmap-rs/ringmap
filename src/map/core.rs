@@ -71,7 +71,10 @@ struct RefMut<'a, K, V> {
 }
 
 #[inline(always)]
-fn get_hash<K, V>(entries: &Entries<K, V>, offset: usize) -> impl Fn(&OffsetIndex) -> u64 + '_ {
+fn get_hash<K, V>(
+    entries: &Entries<K, V>,
+    offset: usize,
+) -> impl Fn(&OffsetIndex) -> u64 + use<'_, K, V> {
     move |&i| entries[i.get(offset)].hash.get()
 }
 
@@ -80,7 +83,7 @@ fn equivalent<'a, K, V, Q: ?Sized + Equivalent<K>>(
     key: &'a Q,
     entries: &'a Entries<K, V>,
     offset: usize,
-) -> impl Fn(&OffsetIndex) -> bool + 'a {
+) -> impl Fn(&OffsetIndex) -> bool + use<'a, K, V, Q> {
     move |&i| Q::equivalent(key, &entries[i.get(offset)].key)
 }
 
