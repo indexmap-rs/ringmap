@@ -17,7 +17,8 @@ use crate::map::MutableKeys;
 /// `use` this trait to enable its methods for `RingSet`.
 ///
 /// This trait is sealed and cannot be implemented for types outside this crate.
-pub trait MutableValues: private::Sealed {
+#[expect(private_bounds)]
+pub trait MutableValues: Sealed {
     type Value;
 
     /// Return item index and mutable reference to the value
@@ -79,8 +80,6 @@ where
     }
 }
 
-mod private {
-    pub trait Sealed {}
+trait Sealed {}
 
-    impl<T, S> Sealed for super::RingSet<T, S> {}
-}
+impl<T, S> Sealed for RingSet<T, S> {}
