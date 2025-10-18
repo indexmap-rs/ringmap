@@ -625,7 +625,8 @@ use crate::Op::*;
 enum Op<K, V> {
     Add(K, V),
     Remove(K),
-    AddEntry(K, V),
+    PushBackEntry(K, V),
+    PushFrontEntry(K, V),
     RemoveEntry(K),
 }
 
@@ -637,8 +638,9 @@ where
     fn arbitrary(g: &mut Gen) -> Self {
         match u32::arbitrary(g) % 4 {
             0 => Add(K::arbitrary(g), V::arbitrary(g)),
-            1 => AddEntry(K::arbitrary(g), V::arbitrary(g)),
-            2 => Remove(K::arbitrary(g)),
+            1 => PushBackEntry(K::arbitrary(g), V::arbitrary(g)),
+            2 => PushFrontEntry(K::arbitrary(g), V::arbitrary(g)),
+            3 => Remove(K::arbitrary(g)),
             _ => RemoveEntry(K::arbitrary(g)),
         }
     }
@@ -656,8 +658,12 @@ where
                 a.insert(k.clone(), v.clone());
                 b.insert(k.clone(), v.clone());
             }
-            AddEntry(ref k, ref v) => {
-                a.entry(k.clone()).or_insert_with(|| v.clone());
+            PushBackEntry(ref k, ref v) => {
+                a.entry(k.clone()).or_push_back_with(|| v.clone());
+                b.entry(k.clone()).or_insert_with(|| v.clone());
+            }
+            PushFrontEntry(ref k, ref v) => {
+                a.entry(k.clone()).or_push_front_with(|| v.clone());
                 b.entry(k.clone()).or_insert_with(|| v.clone());
             }
             Remove(ref k) => {

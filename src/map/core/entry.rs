@@ -37,7 +37,9 @@ pub enum Entry<'a, K, V> {
 }
 
 impl<'a, K, V> Entry<'a, K, V> {
-    /// Return the index where the key-value pair exists or will be inserted.
+    /// Return the index where the key-value pair exists or may be appended.
+    ///
+    /// Note that some methods may instead prepend new items at index 0.
     pub fn index(&self) -> usize {
         match *self {
             Entry::Occupied(ref entry) => entry.index(),
@@ -45,28 +47,40 @@ impl<'a, K, V> Entry<'a, K, V> {
         }
     }
 
-    /// Sets the value of the entry (after inserting if vacant), and returns an `OccupiedEntry`.
+    #[deprecated = "use `push_back_entry` or `push_front_entry` instead"]
+    pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
+        self.push_back_entry(value)
+    }
+
+    /// Sets the value of the entry (after appending if vacant), and returns an `OccupiedEntry`.
     ///
     /// Computes in **O(1)** time (amortized average).
-    pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
+    pub fn push_back_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
         match self {
             Entry::Occupied(mut entry) => {
                 entry.insert(value);
                 entry
             }
-            Entry::Vacant(entry) => entry.insert_entry(value),
+            Entry::Vacant(entry) => entry.push_back_entry(value),
         }
     }
 
-    /// Inserts the given default value in the entry if it is vacant and returns a mutable
-    /// reference to it. Otherwise a mutable reference to an already existent value is returned.
+    /// Sets the value of the entry (after prepending if vacant), and returns an `OccupiedEntry`.
     ///
     /// Computes in **O(1)** time (amortized average).
-    pub fn or_insert(self, default: V) -> &'a mut V {
+    pub fn push_front_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
         match self {
-            Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => entry.insert(default),
+            Entry::Occupied(mut entry) => {
+                entry.insert(value);
+                entry
+            }
+            Entry::Vacant(entry) => entry.push_front_entry(value),
         }
+    }
+
+    #[deprecated = "use `or_push_back` or `or_push_front` instead"]
+    pub fn or_insert(self, default: V) -> &'a mut V {
+        self.or_push_back(default)
     }
 
     /// Appends the given default value in the entry if it is vacant and returns a mutable
@@ -91,26 +105,86 @@ impl<'a, K, V> Entry<'a, K, V> {
         }
     }
 
-    /// Inserts the result of the `call` function in the entry if it is vacant and returns a mutable
+    #[deprecated = "use `or_push_back_default` or `or_push_front_default` instead"]
+    pub fn or_default(self) -> &'a mut V
+    where
+        V: Default,
+    {
+        self.or_push_back_default()
+    }
+
+    /// Appends a default-constructed value in the entry if it is vacant and returns a mutable
     /// reference to it. Otherwise a mutable reference to an already existent value is returned.
     ///
     /// Computes in **O(1)** time (amortized average).
+    pub fn or_push_back_default(self) -> &'a mut V
+    where
+        V: Default,
+    {
+        self.or_push_back_with(V::default)
+    }
+
+    /// Prepends a default-constructed value in the entry if it is vacant and returns a mutable
+    /// reference to it. Otherwise a mutable reference to an already existent value is returned.
+    ///
+    /// Computes in **O(1)** time (amortized average).
+    pub fn or_push_front_default(self) -> &'a mut V
+    where
+        V: Default,
+    {
+        self.or_push_front_with(V::default)
+    }
+
+    #[deprecated = "use `or_push_back_with` or `or_push_front_with` instead"]
     pub fn or_insert_with<F>(self, call: F) -> &'a mut V
+    where
+        F: FnOnce() -> V,
+    {
+        self.or_push_back_with(call)
+    }
+
+    /// Appends the result of the `call` function in the entry if it is vacant and returns a mutable
+    /// reference to it. Otherwise a mutable reference to an already existent value is returned.
+    ///
+    /// Computes in **O(1)** time (amortized average).
+    pub fn or_push_back_with<F>(self, call: F) -> &'a mut V
     where
         F: FnOnce() -> V,
     {
         match self {
             Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => entry.insert(call()),
+            Entry::Vacant(entry) => entry.push_back(call()),
         }
     }
 
-    /// Inserts the result of the `call` function with a reference to the entry's key if it is
+    /// Prepends the result of the `call` function in the entry if it is vacant and returns a mutable
+    /// reference to it. Otherwise a mutable reference to an already existent value is returned.
+    ///
+    /// Computes in **O(1)** time (amortized average).
+    pub fn or_push_front_with<F>(self, call: F) -> &'a mut V
+    where
+        F: FnOnce() -> V,
+    {
+        match self {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.push_front(call()),
+        }
+    }
+
+    #[deprecated = "use `or_push_back_with_key` or `or_push_front_with_key` instead"]
+    pub fn or_insert_with_key<F>(self, call: F) -> &'a mut V
+    where
+        F: FnOnce(&K) -> V,
+    {
+        self.or_push_back_with_key(call)
+    }
+
+    /// Appends the result of the `call` function with a reference to the entry's key if it is
     /// vacant, and returns a mutable reference to the new value. Otherwise a mutable reference to
     /// an already existent value is returned.
     ///
     /// Computes in **O(1)** time (amortized average).
-    pub fn or_insert_with_key<F>(self, call: F) -> &'a mut V
+    pub fn or_push_back_with_key<F>(self, call: F) -> &'a mut V
     where
         F: FnOnce(&K) -> V,
     {
@@ -118,7 +192,25 @@ impl<'a, K, V> Entry<'a, K, V> {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => {
                 let value = call(&entry.key);
-                entry.insert(value)
+                entry.push_back(value)
+            }
+        }
+    }
+
+    /// Prepends the result of the `call` function with a reference to the entry's key if it is
+    /// vacant, and returns a mutable reference to the new value. Otherwise a mutable reference to
+    /// an already existent value is returned.
+    ///
+    /// Computes in **O(1)** time (amortized average).
+    pub fn or_push_front_with_key<F>(self, call: F) -> &'a mut V
+    where
+        F: FnOnce(&K) -> V,
+    {
+        match self {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                let value = call(&entry.key);
+                entry.push_front(value)
             }
         }
     }
@@ -141,20 +233,6 @@ impl<'a, K, V> Entry<'a, K, V> {
             f(entry.get_mut());
         }
         self
-    }
-
-    /// Inserts a default-constructed value in the entry if it is vacant and returns a mutable
-    /// reference to it. Otherwise a mutable reference to an already existent value is returned.
-    ///
-    /// Computes in **O(1)** time (amortized average).
-    pub fn or_default(self) -> &'a mut V
-    where
-        V: Default,
-    {
-        match self {
-            Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => entry.insert(V::default()),
-        }
     }
 }
 
@@ -392,7 +470,10 @@ pub struct VacantEntry<'a, K, V> {
 }
 
 impl<'a, K, V> VacantEntry<'a, K, V> {
-    /// Return the index where a key-value pair may be inserted.
+    /// Return the index where a key-value pair may be appended.
+    ///
+    /// Note that some methods may instead prepend new items at index 0, or
+    /// even insert at arbitrary indexes in-between.
     pub fn index(&self) -> usize {
         self.map.indices.len()
     }
@@ -411,18 +492,17 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
         self.key
     }
 
-    /// Inserts the entry's key and the given value into the map,
-    /// and returns a mutable reference to the value.
+    #[deprecated = "use `push_back` or `push_front` instead"]
     pub fn insert(self, value: V) -> &'a mut V {
-        // this is now redundant...
         self.push_back(value)
     }
 
-    /// Inserts the entry's key and the given value into the map, and returns an `OccupiedEntry`.
-    ///
-    /// Computes in **O(1)** time (amortized average).
-    pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
-        self.map.push_back_unique(self.hash, self.key, value)
+    /// Appends the entry's key and the given value onto the map,
+    /// and returns a mutable reference to the value.
+    pub fn push_back(self, value: V) -> &'a mut V {
+        self.map
+            .push_back_unique(self.hash, self.key, value)
+            .into_mut()
     }
 
     /// Prepends the entry's key and the given value onto the map,
@@ -433,12 +513,23 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
             .into_mut()
     }
 
-    /// Appends the entry's key and the given value onto the map,
-    /// and returns a mutable reference to the value.
-    pub fn push_back(self, value: V) -> &'a mut V {
-        self.map
-            .push_back_unique(self.hash, self.key, value)
-            .into_mut()
+    #[deprecated = "use `push_back_entry` or `push_front_entry` instead"]
+    pub fn insert_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
+        self.push_back_entry(value)
+    }
+
+    /// Appends the entry's key and the given value into the map, and returns an `OccupiedEntry`.
+    ///
+    /// Computes in **O(1)** time (amortized average).
+    pub fn push_back_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
+        self.map.push_back_unique(self.hash, self.key, value)
+    }
+
+    /// Prepends the entry's key and the given value into the map, and returns an `OccupiedEntry`.
+    ///
+    /// Computes in **O(1)** time (amortized average).
+    pub fn push_front_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
+        self.map.push_front_unique(self.hash, self.key, value)
     }
 
     /// Inserts the entry's key and the given value into the map at its ordered

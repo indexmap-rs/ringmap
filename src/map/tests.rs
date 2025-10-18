@@ -44,14 +44,15 @@ fn insert() {
 }
 
 #[test]
-fn insert_full() {
+fn push_back() {
     let insert = vec![9, 2, 7, 1, 4, 6, 13];
     let present = vec![1, 6, 2];
     let mut map = RingMap::with_capacity(insert.len());
 
     for (i, &elt) in insert.iter().enumerate() {
         assert_eq!(map.len(), i);
-        let (index, existing) = map.insert_full(elt, elt);
+        let (index, existing) = map.push_back(elt, elt);
+        assert_eq!(index, i);
         assert_eq!(existing, None);
         assert_eq!(Some(index), map.get_full(&elt).map(|x| x.0));
         assert_eq!(map.len(), i + 1);
@@ -59,7 +60,31 @@ fn insert_full() {
 
     let len = map.len();
     for &elt in &present {
-        let (index, existing) = map.insert_full(elt, elt);
+        let (index, existing) = map.push_back(elt, elt);
+        assert_eq!(existing, Some(elt));
+        assert_eq!(Some(index), map.get_full(&elt).map(|x| x.0));
+        assert_eq!(map.len(), len);
+    }
+}
+
+#[test]
+fn push_front() {
+    let insert = vec![9, 2, 7, 1, 4, 6, 13];
+    let present = vec![1, 6, 2];
+    let mut map = RingMap::with_capacity(insert.len());
+
+    for (i, &elt) in insert.iter().enumerate() {
+        assert_eq!(map.len(), i);
+        let (index, existing) = map.push_front(elt, elt);
+        assert_eq!(index, 0);
+        assert_eq!(existing, None);
+        assert_eq!(Some(index), map.get_full(&elt).map(|x| x.0));
+        assert_eq!(map.len(), i + 1);
+    }
+
+    let len = map.len();
+    for &elt in &present {
+        let (index, existing) = map.push_front(elt, elt);
         assert_eq!(existing, Some(elt));
         assert_eq!(Some(index), map.get_full(&elt).map(|x| x.0));
         assert_eq!(map.len(), len);
@@ -439,7 +464,7 @@ fn entry() {
     {
         let e = map.entry(3);
         assert_eq!(e.index(), 2);
-        let e = e.or_insert("3");
+        let e = e.or_push_back("3");
         assert_eq!(e, &"3");
     }
 
@@ -450,7 +475,16 @@ fn entry() {
         Entry::Occupied(ref e) => assert_eq!(e.get(), &"2"),
         Entry::Vacant(_) => panic!(),
     }
-    assert_eq!(e.or_insert("4"), &"2");
+    assert_eq!(e.or_push_back("4"), &"2");
+    let e = map.entry(2);
+    assert_eq!(e.or_push_front("4"), &"2");
+
+    {
+        let e = map.entry(0);
+        assert_eq!(e.index(), 3);
+        let e = e.or_push_front("0");
+        assert_eq!(e, &"0");
+    }
 }
 
 #[test]
@@ -482,9 +516,11 @@ fn entry_or_default() {
     }
 
     map.insert(1, TestEnum::NonDefaultValue);
-    assert_eq!(&mut TestEnum::NonDefaultValue, map.entry(1).or_default());
+    assert_eq!(&mut TestEnum::NonDefaultValue, map.entry(1).or_push_back_default());
+    assert_eq!(&mut TestEnum::DefaultValue, map.entry(2).or_push_back_default());
 
-    assert_eq!(&mut TestEnum::DefaultValue, map.entry(2).or_default());
+    assert_eq!(&mut TestEnum::NonDefaultValue, map.entry(1).or_push_front_default());
+    assert_eq!(&mut TestEnum::DefaultValue, map.entry(0).or_push_front_default());
 }
 
 #[test]
