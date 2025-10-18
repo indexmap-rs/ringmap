@@ -3,7 +3,7 @@
 [![build status](https://github.com/indexmap-rs/ringmap/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/indexmap-rs/ringmap/actions)
 [![crates.io](https://img.shields.io/crates/v/ringmap.svg)](https://crates.io/crates/ringmap)
 [![docs](https://docs.rs/ringmap/badge.svg)](https://docs.rs/ringmap)
-[![rustc](https://img.shields.io/badge/rust-1.68%2B-orange.svg)](https://img.shields.io/badge/rust-1.68%2B-orange.svg)
+[![rustc](https://img.shields.io/badge/rust-1.82%2B-orange.svg)](https://img.shields.io/badge/rust-1.82%2B-orange.svg)
 
 A pure-Rust hash table which preserves (in a limited sense) insertion order,
 with efficient deque-like manipulation of both the front and back ends.
