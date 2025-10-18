@@ -464,7 +464,7 @@ fn entry() {
     {
         let e = map.entry(3);
         assert_eq!(e.index(), 2);
-        let e = e.or_insert("3");
+        let e = e.or_push_back("3");
         assert_eq!(e, &"3");
     }
 
@@ -475,7 +475,16 @@ fn entry() {
         Entry::Occupied(ref e) => assert_eq!(e.get(), &"2"),
         Entry::Vacant(_) => panic!(),
     }
-    assert_eq!(e.or_insert("4"), &"2");
+    assert_eq!(e.or_push_back("4"), &"2");
+    let e = map.entry(2);
+    assert_eq!(e.or_push_front("4"), &"2");
+
+    {
+        let e = map.entry(0);
+        assert_eq!(e.index(), 3);
+        let e = e.or_push_front("0");
+        assert_eq!(e, &"0");
+    }
 }
 
 #[test]
@@ -507,9 +516,11 @@ fn entry_or_default() {
     }
 
     map.insert(1, TestEnum::NonDefaultValue);
-    assert_eq!(&mut TestEnum::NonDefaultValue, map.entry(1).or_default());
+    assert_eq!(&mut TestEnum::NonDefaultValue, map.entry(1).or_push_back_default());
+    assert_eq!(&mut TestEnum::DefaultValue, map.entry(2).or_push_back_default());
 
-    assert_eq!(&mut TestEnum::DefaultValue, map.entry(2).or_default());
+    assert_eq!(&mut TestEnum::NonDefaultValue, map.entry(1).or_push_front_default());
+    assert_eq!(&mut TestEnum::DefaultValue, map.entry(0).or_push_front_default());
 }
 
 #[test]

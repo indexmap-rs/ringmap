@@ -226,12 +226,24 @@ fn entry_hashmap_150(b: &mut Bencher) {
 }
 
 #[bench]
-fn entry_ringmap_150(b: &mut Bencher) {
+fn entry_ringmap_back_150(b: &mut Bencher) {
     let c = 150;
     b.iter(|| {
         let mut map = RingMap::with_capacity(c);
         for x in 0..c {
-            map.entry(x).or_insert(());
+            map.entry(x).or_push_back(());
+        }
+        map
+    });
+}
+
+#[bench]
+fn entry_ringmap_front_150(b: &mut Bencher) {
+    let c = 150;
+    b.iter(|| {
+        let mut map = RingMap::with_capacity(c);
+        for x in 0..c {
+            map.entry(x).or_push_front(());
         }
         map
     });
