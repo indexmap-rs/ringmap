@@ -962,6 +962,64 @@ impl<T, S> RingSet<T, S> {
         self.map.pop_front().map(|(x, ())| x)
     }
 
+    /// Removes and returns the last value from a set if the predicate
+    /// returns `true`, or [`None`] if the predicate returns false or the set
+    /// is empty (the predicate will not be called in that case).
+    ///
+    /// This preserves the order of the remaining elements.
+    ///
+    /// Computes in **O(1)** time (average).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ringmap::RingSet;
+    ///
+    /// let mut set = RingSet::from([1, 2, 3, 4]);
+    /// let pred = |x: &i32| *x % 2 == 0;
+    ///
+    /// assert_eq!(set.pop_back_if(pred), Some(4));
+    /// assert_eq!(set.as_slices().0, &[1, 2, 3]);
+    /// assert_eq!(set.pop_back_if(pred), None);
+    /// ```
+    pub fn pop_back_if(&mut self, predicate: impl FnOnce(&T) -> bool) -> Option<T> {
+        let last = self.back()?;
+        if predicate(last) {
+            self.pop_back()
+        } else {
+            None
+        }
+    }
+
+    /// Removes and returns the first value from a set if the predicate
+    /// returns `true`, or [`None`] if the predicate returns false or the set
+    /// is empty (the predicate will not be called in that case).
+    ///
+    /// This preserves the order of the remaining elements.
+    ///
+    /// Computes in **O(1)** time (average).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ringmap::RingSet;
+    ///
+    /// let mut set = RingSet::from([1, 2, 3, 4]);
+    /// let pred = |x: &i32| *x % 2 == 1;
+    ///
+    /// assert_eq!(set.pop_front_if(pred), Some(1));
+    /// assert_eq!(set.as_slices().0, &[2, 3, 4]);
+    /// assert_eq!(set.pop_front_if(pred), None);
+    /// ```
+    pub fn pop_front_if(&mut self, predicate: impl FnOnce(&T) -> bool) -> Option<T> {
+        let first = self.front()?;
+        if predicate(first) {
+            self.pop_front()
+        } else {
+            None
+        }
+    }
+
     /// Scan through each value in the set and keep those where the
     /// closure `keep` returns `true`.
     ///

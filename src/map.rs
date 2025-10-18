@@ -1213,6 +1213,66 @@ impl<K, V, S> RingMap<K, V, S> {
         self.core.pop_front()
     }
 
+    /// Removes and returns the last key-value pair from a map if the predicate
+    /// returns `true`, or [`None`] if the predicate returns false or the map
+    /// is empty (the predicate will not be called in that case).
+    ///
+    /// This preserves the order of the remaining elements.
+    ///
+    /// Computes in **O(1)** time (average).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ringmap::RingMap;
+    ///
+    /// let init = [(1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')];
+    /// let mut map = RingMap::from(init);
+    /// let pred = |key: &i32, _value: &mut char| *key % 2 == 0;
+    ///
+    /// assert_eq!(map.pop_back_if(pred), Some((4, 'd')));
+    /// assert_eq!(map.as_slices().0, &init[..3]);
+    /// assert_eq!(map.pop_back_if(pred), None);
+    /// ```
+    pub fn pop_back_if(&mut self, predicate: impl FnOnce(&K, &mut V) -> bool) -> Option<(K, V)> {
+        let (last_key, last_value) = self.back_mut()?;
+        if predicate(last_key, last_value) {
+            self.core.pop_back()
+        } else {
+            None
+        }
+    }
+
+    /// Removes and returns the first key-value pair from a map if the predicate
+    /// returns `true`, or [`None`] if the predicate returns false or the map
+    /// is empty (the predicate will not be called in that case).
+    ///
+    /// This preserves the order of the remaining elements.
+    ///
+    /// Computes in **O(1)** time (average).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ringmap::RingMap;
+    ///
+    /// let init = [(1, 'a'), (2, 'b'), (3, 'c'), (4, 'd')];
+    /// let mut map = RingMap::from(init);
+    /// let pred = |key: &i32, _value: &mut char| *key % 2 == 1;
+    ///
+    /// assert_eq!(map.pop_front_if(pred), Some((1, 'a')));
+    /// assert_eq!(map.as_slices().0, &init[1..]);
+    /// assert_eq!(map.pop_front_if(pred), None);
+    /// ```
+    pub fn pop_front_if(&mut self, predicate: impl FnOnce(&K, &mut V) -> bool) -> Option<(K, V)> {
+        let (first_key, first_value) = self.front_mut()?;
+        if predicate(first_key, first_value) {
+            self.core.pop_front()
+        } else {
+            None
+        }
+    }
+
     /// Scan through each key-value pair in the map and keep those where the
     /// closure `keep` returns `true`.
     ///
