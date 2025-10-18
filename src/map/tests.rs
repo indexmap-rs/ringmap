@@ -44,14 +44,15 @@ fn insert() {
 }
 
 #[test]
-fn insert_full() {
+fn push_back() {
     let insert = vec![9, 2, 7, 1, 4, 6, 13];
     let present = vec![1, 6, 2];
     let mut map = RingMap::with_capacity(insert.len());
 
     for (i, &elt) in insert.iter().enumerate() {
         assert_eq!(map.len(), i);
-        let (index, existing) = map.insert_full(elt, elt);
+        let (index, existing) = map.push_back(elt, elt);
+        assert_eq!(index, i);
         assert_eq!(existing, None);
         assert_eq!(Some(index), map.get_full(&elt).map(|x| x.0));
         assert_eq!(map.len(), i + 1);
@@ -59,7 +60,31 @@ fn insert_full() {
 
     let len = map.len();
     for &elt in &present {
-        let (index, existing) = map.insert_full(elt, elt);
+        let (index, existing) = map.push_back(elt, elt);
+        assert_eq!(existing, Some(elt));
+        assert_eq!(Some(index), map.get_full(&elt).map(|x| x.0));
+        assert_eq!(map.len(), len);
+    }
+}
+
+#[test]
+fn push_front() {
+    let insert = vec![9, 2, 7, 1, 4, 6, 13];
+    let present = vec![1, 6, 2];
+    let mut map = RingMap::with_capacity(insert.len());
+
+    for (i, &elt) in insert.iter().enumerate() {
+        assert_eq!(map.len(), i);
+        let (index, existing) = map.push_front(elt, elt);
+        assert_eq!(index, 0);
+        assert_eq!(existing, None);
+        assert_eq!(Some(index), map.get_full(&elt).map(|x| x.0));
+        assert_eq!(map.len(), i + 1);
+    }
+
+    let len = map.len();
+    for &elt in &present {
+        let (index, existing) = map.push_front(elt, elt);
         assert_eq!(existing, Some(elt));
         assert_eq!(Some(index), map.get_full(&elt).map(|x| x.0));
         assert_eq!(map.len(), len);

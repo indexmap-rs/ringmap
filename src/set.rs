@@ -378,22 +378,18 @@ where
     /// item and returns `true`.
     ///
     /// Computes in **O(1)** time (amortized average).
+    ///
+    /// See also [`push_back`][Self::push_back] or
+    /// [`push_front`][Self::push_front] if you need to get the index of
+    /// the corresponding item, explicitly choosing which position to
+    /// make new insertions.
     pub fn insert(&mut self, value: T) -> bool {
         self.map.insert(value, ()).is_none()
     }
 
-    /// Insert the value into the set, and get its index.
-    ///
-    /// If an equivalent item already exists in the set, it returns
-    /// the index of the existing item and `false`, leaving the
-    /// original value in the set and without altering its insertion
-    /// order. Otherwise, it inserts the new item and returns the index
-    /// of the inserted item and `true`.
-    ///
-    /// Computes in **O(1)** time (amortized average).
+    #[deprecated = "use `push_back` or `push_front` instead"]
     pub fn insert_full(&mut self, value: T) -> (usize, bool) {
-        let (index, existing) = self.map.insert_full(value, ());
-        (index, existing.is_none())
+        self.push_back(value)
     }
 
     /// Appends the value into the set, and get its index.

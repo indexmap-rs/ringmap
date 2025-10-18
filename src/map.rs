@@ -442,27 +442,16 @@ where
     /// Computes in **O(1)** time (amortized average).
     ///
     /// See also [`entry`][Self::entry] if you want to insert *or* modify,
-    /// or [`insert_full`][Self::insert_full] if you need to get the index of
-    /// the corresponding key-value pair.
+    /// or [`push_back`][Self::push_back] or [`push_front`][Self::push_front]
+    /// if you need to get the index of the corresponding key-value pair,
+    /// explicitly choosing which position to make new insertions.
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
-        self.insert_full(key, value).1
+        self.push_back(key, value).1
     }
 
-    /// Insert a key-value pair in the map, and get their index.
-    ///
-    /// If an equivalent key already exists in the map: the key remains and
-    /// retains in its place in the order, its corresponding value is updated
-    /// with `value`, and the older value is returned inside `(index, Some(_))`.
-    ///
-    /// If no equivalent key existed in the map: the new key-value pair is
-    /// inserted, last in order, and `(index, None)` is returned.
-    ///
-    /// Computes in **O(1)** time (amortized average).
-    ///
-    /// See also [`entry`][Self::entry] if you want to insert *or* modify.
+    #[deprecated = "use `push_back` or `push_front` instead"]
     pub fn insert_full(&mut self, key: K, value: V) -> (usize, Option<V>) {
-        let hash = self.hash(&key);
-        self.core.push_back(hash, key, value)
+        self.push_back(key, value)
     }
 
     /// Appends or updates a key-value pair in the map, and get their index.

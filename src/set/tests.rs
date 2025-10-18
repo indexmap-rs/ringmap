@@ -43,14 +43,15 @@ fn insert() {
 }
 
 #[test]
-fn insert_full() {
+fn push_back() {
     let insert = vec![9, 2, 7, 1, 4, 6, 13];
     let present = vec![1, 6, 2];
     let mut set = RingSet::with_capacity(insert.len());
 
     for (i, &elt) in insert.iter().enumerate() {
         assert_eq!(set.len(), i);
-        let (index, success) = set.insert_full(elt);
+        let (index, success) = set.push_back(elt);
+        assert_eq!(index, i);
         assert!(success);
         assert_eq!(Some(index), set.get_full(&elt).map(|x| x.0));
         assert_eq!(set.len(), i + 1);
@@ -58,7 +59,31 @@ fn insert_full() {
 
     let len = set.len();
     for &elt in &present {
-        let (index, success) = set.insert_full(elt);
+        let (index, success) = set.push_back(elt);
+        assert!(!success);
+        assert_eq!(Some(index), set.get_full(&elt).map(|x| x.0));
+        assert_eq!(set.len(), len);
+    }
+}
+
+#[test]
+fn push_front() {
+    let insert = vec![9, 2, 7, 1, 4, 6, 13];
+    let present = vec![1, 6, 2];
+    let mut set = RingSet::with_capacity(insert.len());
+
+    for (i, &elt) in insert.iter().enumerate() {
+        assert_eq!(set.len(), i);
+        let (index, success) = set.push_front(elt);
+        assert_eq!(index, 0);
+        assert!(success);
+        assert_eq!(Some(index), set.get_full(&elt).map(|x| x.0));
+        assert_eq!(set.len(), i + 1);
+    }
+
+    let len = set.len();
+    for &elt in &present {
+        let (index, success) = set.push_front(elt);
         assert!(!success);
         assert_eq!(Some(index), set.get_full(&elt).map(|x| x.0));
         assert_eq!(set.len(), len);
