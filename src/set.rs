@@ -18,7 +18,7 @@ pub use crate::rayon::set as rayon;
 use crate::TryReserveError;
 
 #[cfg(feature = "std")]
-use std::collections::hash_map::RandomState;
+use std::hash::RandomState;
 
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
@@ -1195,14 +1195,7 @@ impl<T, S> RingSet<T, S> {
     where
         T: PartialOrd,
     {
-        // TODO(MSRV 1.82): self.iter().is_sorted()
-        let (head, tail) = self.as_slices();
-        head.is_sorted()
-            && match (head.last(), tail.first()) {
-                (Some(v1), Some(v2)) => v1 <= v2,
-                _ => true,
-            }
-            && tail.is_sorted()
+        self.iter().is_sorted()
     }
 
     /// Checks if this set is sorted using the given comparator function.
@@ -1211,31 +1204,17 @@ impl<T, S> RingSet<T, S> {
     where
         F: FnMut(&'a T, &'a T) -> bool,
     {
-        // TODO(MSRV 1.82): self.iter().is_sorted_by(|&v1, &v2| cmp(v1, v2))
-        let (head, tail) = self.as_slices();
-        head.is_sorted_by(&mut cmp)
-            && match (head.last(), tail.first()) {
-                (Some(v1), Some(v2)) => cmp(v1, v2),
-                _ => true,
-            }
-            && tail.is_sorted_by(&mut cmp)
+        self.iter().is_sorted_by(|&v1, &v2| cmp(v1, v2))
     }
 
     /// Checks if this set is sorted using the given sort-key function.
     #[inline]
-    pub fn is_sorted_by_key<'a, F, K>(&'a self, mut sort_key: F) -> bool
+    pub fn is_sorted_by_key<'a, F, K>(&'a self, sort_key: F) -> bool
     where
         F: FnMut(&'a T) -> K,
         K: PartialOrd,
     {
-        // TODO(MSRV 1.82): self.iter().is_sorted_by_key(sort_key)
-        let (head, tail) = self.as_slices();
-        head.is_sorted_by_key(&mut sort_key)
-            && match (head.last(), tail.first()) {
-                (Some(v1), Some(v2)) => sort_key(v1) <= sort_key(v2),
-                _ => true,
-            }
-            && tail.is_sorted_by_key(&mut sort_key)
+        self.iter().is_sorted_by_key(sort_key)
     }
 
     /// Returns the index of the partition point of a sorted set according to the given predicate

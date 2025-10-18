@@ -71,7 +71,10 @@ struct RefMut<'a, K, V> {
 }
 
 #[inline(always)]
-fn get_hash<K, V>(entries: &Entries<K, V>, offset: usize) -> impl Fn(&OffsetIndex) -> u64 + '_ {
+fn get_hash<K, V>(
+    entries: &Entries<K, V>,
+    offset: usize,
+) -> impl Fn(&OffsetIndex) -> u64 + use<'_, K, V> {
     move |&i| entries[i.get(offset)].hash.get()
 }
 
@@ -80,7 +83,7 @@ fn equivalent<'a, K, V, Q: ?Sized + Equivalent<K>>(
     key: &'a Q,
     entries: &'a Entries<K, V>,
     offset: usize,
-) -> impl Fn(&OffsetIndex) -> bool + 'a {
+) -> impl Fn(&OffsetIndex) -> bool + use<'a, K, V, Q> {
     move |&i| Q::equivalent(key, &entries[i.get(offset)].key)
 }
 
@@ -183,7 +186,7 @@ where
 
 impl<K, V> RingMapCore<K, V> {
     /// The maximum capacity before the `entries` allocation would exceed `isize::MAX`.
-    const MAX_ENTRIES_CAPACITY: usize = (isize::MAX as usize) / mem::size_of::<Bucket<K, V>>();
+    const MAX_ENTRIES_CAPACITY: usize = (isize::MAX as usize) / size_of::<Bucket<K, V>>();
 
     #[inline]
     pub(crate) const fn new() -> Self {

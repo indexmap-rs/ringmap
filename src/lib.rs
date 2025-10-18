@@ -1,6 +1,3 @@
-// We *mostly* avoid unsafe code, but `Slice` allows it for DST casting.
-#![deny(unsafe_code)]
-#![warn(rust_2018_idioms)]
 #![no_std]
 
 //! [`RingMap`] is a hash table where the iteration order of the key-value pairs is
@@ -58,7 +55,7 @@
 //! ### Alternate Hashers
 //!
 //! [`RingMap`] and [`RingSet`] have a default hasher type
-//! [`S = RandomState`][std::collections::hash_map::RandomState],
+//! [`S = RandomState`][std::hash::RandomState],
 //! just like the standard `HashMap` and `HashSet`, which is resistant to
 //! HashDoS attacks but not the most performant. Type aliases can make it easier
 //! to use alternate hashers:
@@ -77,9 +74,9 @@
 //!
 //! ### Rust Version
 //!
-//! This version of ringmap requires Rust 1.68 or later.
+//! This version of ringmap requires Rust 1.82 or later.
 //!
-//! The ringmap 0.1 release series will use a carefully considered version
+//! The ringmap 0.2 release series will use a carefully considered version
 //! upgrade policy, where in a later 0.x version, we will raise the minimum
 //! required Rust version.
 //!
@@ -253,9 +250,7 @@ impl core::fmt::Display for TryReserveError {
     }
 }
 
-#[cfg(feature = "std")]
-#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
-impl std::error::Error for TryReserveError {}
+impl core::error::Error for TryReserveError {}
 
 // NOTE: This is copied from the slice module in the std lib.
 /// The error type returned by [`get_disjoint_indices_mut`][`RingMap::get_disjoint_indices_mut`].
@@ -283,6 +278,4 @@ impl core::fmt::Display for GetDisjointMutError {
     }
 }
 
-#[cfg(feature = "std")]
-#[cfg_attr(docsrs, doc(cfg(feature = "std")))]
-impl std::error::Error for GetDisjointMutError {}
+impl core::error::Error for GetDisjointMutError {}

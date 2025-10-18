@@ -38,7 +38,7 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
 #[cfg(feature = "std")]
-use std::collections::hash_map::RandomState;
+use std::hash::RandomState;
 
 pub(crate) use self::core::{ExtractCore, RingMapCore};
 use crate::util::third;
@@ -837,9 +837,8 @@ where
     S: BuildHasher,
 {
     pub(crate) fn hash<Q: ?Sized + Hash>(&self, key: &Q) -> HashValue {
-        let mut h = self.hash_builder.build_hasher();
-        key.hash(&mut h);
-        HashValue(h.finish() as usize)
+        let h = self.hash_builder.hash_one(key);
+        HashValue(h as usize)
     }
 
     /// Return `true` if an equivalent to `key` exists in the map.
@@ -1465,14 +1464,7 @@ impl<K, V, S> RingMap<K, V, S> {
     where
         K: PartialOrd,
     {
-        // TODO(MSRV 1.82): self.keys().is_sorted()
-        let (head, tail) = self.as_slices();
-        head.is_sorted()
-            && match (head.last(), tail.first()) {
-                (Some((k1, _)), Some((k2, _))) => k1 <= k2,
-                _ => true,
-            }
-            && tail.is_sorted()
+        self.keys().is_sorted()
     }
 
     /// Checks if this map is sorted using the given comparator function.
@@ -1481,15 +1473,8 @@ impl<K, V, S> RingMap<K, V, S> {
     where
         F: FnMut(&'a K, &'a V, &'a K, &'a V) -> bool,
     {
-        // TODO(MSRV 1.82): self.iter()
-        //    .is_sorted_by(move |&(k1, v1), &(k2, v2)| cmp(k1, v1, k2, v2))
-        let (head, tail) = self.as_slices();
-        head.is_sorted_by(&mut cmp)
-            && match (head.last(), tail.first()) {
-                (Some((k1, v1)), Some((k2, v2))) => cmp(k1, v1, k2, v2),
-                _ => true,
-            }
-            && tail.is_sorted_by(&mut cmp)
+        self.iter()
+            .is_sorted_by(move |&(k1, v1), &(k2, v2)| cmp(k1, v1, k2, v2))
     }
 
     /// Checks if this map is sorted using the given sort-key function.
@@ -1499,15 +1484,8 @@ impl<K, V, S> RingMap<K, V, S> {
         F: FnMut(&'a K, &'a V) -> T,
         T: PartialOrd,
     {
-        // TODO(MSRV 1.82): self.iter()
-        //     .is_sorted_by_key(move |(k1, v1)| sort_key(k1, v1))
-        let (head, tail) = self.as_slices();
-        head.is_sorted_by_key(&mut sort_key)
-            && match (head.last(), tail.first()) {
-                (Some((k1, v1)), Some((k2, v2))) => sort_key(k1, v1) <= sort_key(k2, v2),
-                _ => true,
-            }
-            && tail.is_sorted_by_key(&mut sort_key)
+        self.iter()
+            .is_sorted_by_key(move |(k1, v1)| sort_key(k1, v1))
     }
 
     /// Returns the index of the partition point of a sorted map according to the given predicate
@@ -1959,10 +1937,11 @@ where
         // Otherwise reserve half the hint (rounded up), so the map
         // will only resize twice in the worst case.
         let iter = iterable.into_iter();
+        let (lower_len, _) = iter.size_hint();
         let reserve = if self.is_empty() {
-            iter.size_hint().0
+            lower_len
         } else {
-            (iter.size_hint().0 + 1) / 2
+            lower_len.div_ceil(2)
         };
         self.reserve(reserve);
         iter.for_each(move |(k, v)| {
