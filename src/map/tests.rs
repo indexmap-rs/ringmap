@@ -516,11 +516,23 @@ fn entry_or_default() {
     }
 
     map.insert(1, TestEnum::NonDefaultValue);
-    assert_eq!(&mut TestEnum::NonDefaultValue, map.entry(1).or_push_back_default());
-    assert_eq!(&mut TestEnum::DefaultValue, map.entry(2).or_push_back_default());
+    assert_eq!(
+        &mut TestEnum::NonDefaultValue,
+        map.entry(1).or_push_back_default()
+    );
+    assert_eq!(
+        &mut TestEnum::DefaultValue,
+        map.entry(2).or_push_back_default()
+    );
 
-    assert_eq!(&mut TestEnum::NonDefaultValue, map.entry(1).or_push_front_default());
-    assert_eq!(&mut TestEnum::DefaultValue, map.entry(0).or_push_front_default());
+    assert_eq!(
+        &mut TestEnum::NonDefaultValue,
+        map.entry(1).or_push_front_default()
+    );
+    assert_eq!(
+        &mut TestEnum::DefaultValue,
+        map.entry(0).or_push_front_default()
+    );
 }
 
 #[test]
