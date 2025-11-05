@@ -1,31 +1,7 @@
-use super::{equivalent, Entries, OffsetIndex, RefMut, RingMapCore};
+use super::{equivalent, get_hash, Bucket, OffsetIndex, RingMapCore};
 use crate::HashValue;
 use core::cmp::Ordering;
 use core::{fmt, mem};
-use hashbrown::hash_table;
-
-impl<K, V> RingMapCore<K, V> {
-    pub(crate) fn entry(&mut self, hash: HashValue, key: K) -> Entry<'_, K, V>
-    where
-        K: Eq,
-    {
-        let entries = &mut self.entries;
-        let offset = &mut self.offset;
-        let eq = equivalent(&key, entries, *offset);
-        match self.indices.find_entry(hash.get(), eq) {
-            Ok(index) => Entry::Occupied(OccupiedEntry {
-                entries,
-                index,
-                offset,
-            }),
-            Err(absent) => Entry::Vacant(VacantEntry {
-                map: RefMut::new(absent.into_table(), entries, offset),
-                hash,
-                key,
-            }),
-        }
-    }
-}
 
 /// Entry for an existing key-value pair in an [`RingMap`][crate::RingMap]
 /// or a vacant location to insert one.
@@ -37,13 +13,30 @@ pub enum Entry<'a, K, V> {
 }
 
 impl<'a, K, V> Entry<'a, K, V> {
+    pub(crate) fn new(map: &'a mut RingMapCore<K, V>, hash: HashValue, key: K) -> Self
+    where
+        K: Eq,
+    {
+        let entries = &map.entries;
+        let offset = map.offset;
+        let eq = equivalent(&key, entries, offset);
+        match map.indices.find_entry(hash.get(), eq) {
+            Ok(entry) => Entry::Occupied(OccupiedEntry {
+                bucket: entry.bucket_index(),
+                index: entry.get().get(offset),
+                map,
+            }),
+            Err(_) => Entry::Vacant(VacantEntry { map, hash, key }),
+        }
+    }
+
     /// Return the index where the key-value pair exists or may be appended.
     ///
     /// Note that some methods may instead prepend new items at index 0.
     pub fn index(&self) -> usize {
-        match *self {
-            Entry::Occupied(ref entry) => entry.index(),
-            Entry::Vacant(ref entry) => entry.index(),
+        match self {
+            Entry::Occupied(entry) => entry.index,
+            Entry::Vacant(entry) => entry.index(),
         }
     }
 
@@ -250,33 +243,52 @@ impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for Entry<'_, K, V> {
 /// A view into an occupied entry in an [`RingMap`][crate::RingMap].
 /// It is part of the [`Entry`] enum.
 pub struct OccupiedEntry<'a, K, V> {
-    entries: &'a mut Entries<K, V>,
-    offset: &'a mut usize,
-    index: hash_table::OccupiedEntry<'a, OffsetIndex>,
+    map: &'a mut RingMapCore<K, V>,
+    // We have a mutable reference to the map, which keeps these two
+    // indices valid and pointing to the correct entry.
+    index: usize,
+    bucket: usize,
 }
 
 impl<'a, K, V> OccupiedEntry<'a, K, V> {
-    pub(super) fn new(
-        entries: &'a mut Entries<K, V>,
-        offset: &'a mut usize,
-        index: hash_table::OccupiedEntry<'a, OffsetIndex>,
-    ) -> Self {
-        Self {
-            entries,
-            offset,
-            index,
+    /// Constructor for `RawEntryMut::from_hash`
+    pub(super) fn from_hash<F>(
+        map: &'a mut RingMapCore<K, V>,
+        hash: u64,
+        mut is_match: F,
+    ) -> Result<Self, &'a mut RingMapCore<K, V>>
+    where
+        F: FnMut(&K) -> bool,
+    {
+        let entries = &map.entries;
+        let offset = map.offset;
+        let eq = move |&i: &OffsetIndex| is_match(&entries[i.get(offset)].key);
+        match map.indices.find_entry(hash, eq) {
+            Ok(entry) => Ok(OccupiedEntry {
+                bucket: entry.bucket_index(),
+                index: entry.get().get(offset),
+                map,
+            }),
+            Err(_) => Err(map),
         }
+    }
+
+    pub(crate) fn get_bucket(&self) -> &Bucket<K, V> {
+        &self.map.entries[self.index]
+    }
+
+    pub(crate) fn get_bucket_mut(&mut self) -> &mut Bucket<K, V> {
+        &mut self.map.entries[self.index]
+    }
+
+    pub(crate) fn into_bucket(self) -> &'a mut Bucket<K, V> {
+        &mut self.map.entries[self.index]
     }
 
     /// Return the index of the key-value pair
     #[inline]
     pub fn index(&self) -> usize {
-        self.index.get().get(*self.offset)
-    }
-
-    #[inline]
-    fn into_ref_mut(self) -> RefMut<'a, K, V> {
-        RefMut::new(self.index.into_table(), self.entries, self.offset)
+        self.index
     }
 
     /// Gets a reference to the entry's key in the map.
@@ -285,17 +297,12 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     /// difference if the key type has any distinguishing features outside of `Hash` and `Eq`, like
     /// extra fields or the memory address of an allocation.
     pub fn key(&self) -> &K {
-        &self.entries[self.index()].key
-    }
-
-    pub(crate) fn key_mut(&mut self) -> &mut K {
-        let index = self.index();
-        &mut self.entries[index].key
+        &self.map.entries[self.index].key
     }
 
     /// Gets a reference to the entry's value in the map.
     pub fn get(&self) -> &V {
-        &self.entries[self.index()].value
+        &self.map.entries[self.index].value
     }
 
     /// Gets a mutable reference to the entry's value in the map.
@@ -303,20 +310,13 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     /// If you need a reference which may outlive the destruction of the
     /// [`Entry`] value, see [`into_mut`][Self::into_mut].
     pub fn get_mut(&mut self) -> &mut V {
-        let index = self.index();
-        &mut self.entries[index].value
+        &mut self.map.entries[self.index].value
     }
 
     /// Converts into a mutable reference to the entry's value in the map,
     /// with a lifetime bound to the map itself.
     pub fn into_mut(self) -> &'a mut V {
-        let index = self.index();
-        &mut self.entries[index].value
-    }
-
-    pub(super) fn into_muts(self) -> (&'a mut K, &'a mut V) {
-        let index = self.index();
-        self.entries[index].muts()
+        &mut self.map.entries[self.index].value
     }
 
     /// Sets the value of the entry to `value`, and returns the entry's old value.
@@ -342,10 +342,9 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     /// **This perturbs the index of all of the following elements!**
     ///
     /// Computes in **O(n)** time (average).
-    pub fn remove_entry(self) -> (K, V) {
-        let (index, entry) = self.index.remove();
-        let index = index.get(*self.offset);
-        RefMut::new(entry.into_table(), self.entries, self.offset).shift_remove_finish(index)
+    pub fn remove_entry(mut self) -> (K, V) {
+        self.remove_index();
+        self.map.shift_remove_finish(self.index)
     }
 
     /// Remove the key, value pair stored in the map for this entry, and return the value.
@@ -366,10 +365,9 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     /// **This perturbs the position of what used to be the last element!**
     ///
     /// Computes in **O(1)** time (average).
-    pub fn swap_remove_back_entry(self) -> (K, V) {
-        let (index, entry) = self.index.remove();
-        let index = index.get(*self.offset);
-        RefMut::new(entry.into_table(), self.entries, self.offset).swap_remove_back_finish(index)
+    pub fn swap_remove_back_entry(mut self) -> (K, V) {
+        self.remove_index();
+        self.map.swap_remove_back_finish(self.index)
     }
 
     /// Remove the key, value pair stored in the map for this entry, and return the value.
@@ -390,10 +388,15 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     /// **This perturbs the position of what used to be the front element!**
     ///
     /// Computes in **O(1)** time (average).
-    pub fn swap_remove_front_entry(self) -> (K, V) {
-        let (index, entry) = self.index.remove();
-        let index = index.get(*self.offset);
-        RefMut::new(entry.into_table(), self.entries, self.offset).swap_remove_front_finish(index)
+    pub fn swap_remove_front_entry(mut self) -> (K, V) {
+        self.remove_index();
+        self.map.swap_remove_front_finish(self.index)
+    }
+
+    fn remove_index(&mut self) {
+        let entry = self.map.indices.get_bucket_entry(self.bucket).unwrap();
+        debug_assert_eq!(entry.get().get(self.map.offset), self.index);
+        entry.remove();
     }
 
     /// Moves the position of the entry to a new index
@@ -410,8 +413,16 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     /// Computes in **O(n)** time (average).
     #[track_caller]
     pub fn move_index(self, to: usize) {
-        let index = self.index();
-        self.into_ref_mut().move_index(index, to);
+        if self.index != to {
+            let _ = self.map.entries[to]; // explicit bounds check
+
+            let orig_offset = self.map.offset;
+            self.map.move_index_inner(self.index, to);
+
+            let index = self.map.indices.get_bucket_mut(self.bucket).unwrap();
+            debug_assert_eq!(index.get(orig_offset), self.index);
+            *index = OffsetIndex::new(to, self.map.offset);
+        }
     }
 
     /// Swaps the position of entry with another.
@@ -424,8 +435,19 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     /// Computes in **O(1)** time (average).
     #[track_caller]
     pub fn swap_indices(self, other: usize) {
-        let index = self.index();
-        self.into_ref_mut().swap_indices(index, other);
+        if self.index != other {
+            // Since we already know where our bucket is, we only need to find the other.
+            let hash = self.map.entries[other].hash;
+            let oi = OffsetIndex::new(other, self.map.offset);
+            let other_mut = self.map.indices.find_mut(hash.get(), move |&i| i == oi);
+            *other_mut.expect("index not found") = OffsetIndex::new(self.index, self.map.offset);
+
+            let index = self.map.indices.get_bucket_mut(self.bucket).unwrap();
+            debug_assert_eq!(index.get(self.map.offset), self.index);
+            *index = oi;
+
+            self.map.entries.swap(self.index, other);
+        }
     }
 }
 
@@ -440,31 +462,21 @@ impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for OccupiedEntry<'_, K, V> {
 
 impl<'a, K, V> From<IndexedEntry<'a, K, V>> for OccupiedEntry<'a, K, V> {
     fn from(other: IndexedEntry<'a, K, V>) -> Self {
-        let IndexedEntry {
-            map:
-                RefMut {
-                    indices,
-                    entries,
-                    offset,
-                },
-            index,
-        } = other;
-        let hash = entries[index].hash;
-        let needle = OffsetIndex::new(index, *offset);
-        Self {
-            entries,
-            offset,
-            index: indices
-                .find_entry(hash.get(), move |&i| i == needle)
-                .expect("index not found"),
-        }
+        let IndexedEntry { map, index } = other;
+        let hash = map.entries[index].hash;
+        let needle = OffsetIndex::new(index, map.offset);
+        let bucket = map
+            .indices
+            .find_bucket_index(hash.get(), move |&i| i == needle)
+            .expect("index not found");
+        Self { map, index, bucket }
     }
 }
 
 /// A view into a vacant entry in an [`RingMap`][crate::RingMap].
 /// It is part of the [`Entry`] enum.
 pub struct VacantEntry<'a, K, V> {
-    map: RefMut<'a, K, V>,
+    map: &'a mut RingMapCore<K, V>,
     hash: HashValue,
     key: K,
 }
@@ -500,17 +512,15 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
     /// Appends the entry's key and the given value onto the map,
     /// and returns a mutable reference to the value.
     pub fn push_back(self, value: V) -> &'a mut V {
-        self.map
-            .push_back_unique(self.hash, self.key, value)
-            .into_mut()
+        let Self { map, hash, key } = self;
+        map.push_back_unique(hash, key, value).value_mut()
     }
 
     /// Prepends the entry's key and the given value onto the map,
     /// and returns a mutable reference to the value.
     pub fn push_front(self, value: V) -> &'a mut V {
-        self.map
-            .push_front_unique(self.hash, self.key, value)
-            .into_mut()
+        let Self { map, hash, key } = self;
+        map.push_front_unique(hash, key, value).value_mut()
     }
 
     #[deprecated = "use `push_back_entry` or `push_front_entry` instead"]
@@ -522,14 +532,32 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
     ///
     /// Computes in **O(1)** time (amortized average).
     pub fn push_back_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
-        self.map.push_back_unique(self.hash, self.key, value)
+        let Self { map, hash, key } = self;
+        let index = map.indices.len();
+        debug_assert_eq!(index, map.entries.len());
+        let oi = OffsetIndex::new(index, map.offset);
+        let bucket = map
+            .indices
+            .insert_unique(hash.get(), oi, get_hash(&map.entries, map.offset))
+            .bucket_index();
+        map.push_back_entry(hash, key, value);
+        OccupiedEntry { map, index, bucket }
     }
 
     /// Prepends the entry's key and the given value into the map, and returns an `OccupiedEntry`.
     ///
     /// Computes in **O(1)** time (amortized average).
     pub fn push_front_entry(self, value: V) -> OccupiedEntry<'a, K, V> {
-        self.map.push_front_unique(self.hash, self.key, value)
+        let Self { map, hash, key } = self;
+        let index = 0;
+        let oi = OffsetIndex::new(usize::MAX, map.offset);
+        let bucket = map
+            .indices
+            .insert_unique(hash.get(), oi, get_hash(&map.entries, map.offset))
+            .bucket_index();
+        map.push_front_entry(hash, key, value);
+        map.offset = map.offset.wrapping_sub(1); // now MAX is 0
+        OccupiedEntry { map, index, bucket }
     }
 
     /// Inserts the entry's key and the given value into the map at its ordered
@@ -594,7 +622,7 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
     ///
     /// Computes in **O(n)** time (average).
     #[track_caller]
-    pub fn shift_insert(mut self, index: usize, value: V) -> &'a mut V {
+    pub fn shift_insert(self, index: usize, value: V) -> &'a mut V {
         self.map
             .shift_insert_unique(index, self.hash, self.key, value);
         &mut self.map.entries[index].value
@@ -608,7 +636,27 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
     /// Computes in **O(1)** time (average).
     #[track_caller]
     pub fn replace_index(self, index: usize) -> (K, OccupiedEntry<'a, K, V>) {
-        self.map.replace_index_unique(index, self.hash, self.key)
+        // self.map.replace_index_unique(index, self.hash, self.key)
+        let Self { map, hash, key } = self;
+
+        // NB: This removal and insertion isn't "no grow" (with unreachable hasher)
+        // because hashbrown's tombstones might force a resize anyway.
+        let old_hash = map.entries[index].hash;
+        let oi = OffsetIndex::new(index, map.offset);
+        map.indices
+            .find_entry(old_hash.get(), move |&i| i == oi)
+            .expect("index not found")
+            .remove();
+        let bucket = map
+            .indices
+            .insert_unique(hash.get(), oi, get_hash(&map.entries, map.offset))
+            .bucket_index();
+
+        let entry = &mut map.entries[index];
+        entry.hash = hash;
+        let old_key = mem::replace(&mut entry.key, key);
+
+        (old_key, OccupiedEntry { map, index, bucket })
     }
 }
 
@@ -622,17 +670,18 @@ impl<K: fmt::Debug, V> fmt::Debug for VacantEntry<'_, K, V> {
 ///
 /// This `struct` is created from the [`get_index_entry`][crate::RingMap::get_index_entry] method.
 pub struct IndexedEntry<'a, K, V> {
-    map: RefMut<'a, K, V>,
+    map: &'a mut RingMapCore<K, V>,
     // We have a mutable reference to the map, which keeps the index
     // valid and pointing to the correct entry.
     index: usize,
 }
 
 impl<'a, K, V> IndexedEntry<'a, K, V> {
-    pub(crate) fn new(map: &'a mut RingMapCore<K, V>, index: usize) -> Self {
-        Self {
-            map: map.borrow_mut(),
-            index,
+    pub(crate) fn new(map: &'a mut RingMapCore<K, V>, index: usize) -> Option<Self> {
+        if index < map.len() {
+            Some(Self { map, index })
+        } else {
+            None
         }
     }
 
@@ -682,7 +731,7 @@ impl<'a, K, V> IndexedEntry<'a, K, V> {
     /// **This perturbs the index of all of the following elements!**
     ///
     /// Computes in **O(n)** time (average).
-    pub fn remove_entry(mut self) -> (K, V) {
+    pub fn remove_entry(self) -> (K, V) {
         self.map.shift_remove_index(self.index).unwrap()
     }
 
@@ -704,7 +753,7 @@ impl<'a, K, V> IndexedEntry<'a, K, V> {
     /// **This perturbs the position of what used to be the last element!**
     ///
     /// Computes in **O(1)** time (average).
-    pub fn swap_remove_back_entry(mut self) -> (K, V) {
+    pub fn swap_remove_back_entry(self) -> (K, V) {
         self.map.swap_remove_back_index(self.index).unwrap()
     }
 
@@ -726,7 +775,7 @@ impl<'a, K, V> IndexedEntry<'a, K, V> {
     /// **This perturbs the position of what used to be the front element!**
     ///
     /// Computes in **O(1)** time (average).
-    pub fn swap_remove_front_entry(mut self) -> (K, V) {
+    pub fn swap_remove_front_entry(self) -> (K, V) {
         self.map.swap_remove_front_index(self.index).unwrap()
     }
 
@@ -754,7 +803,7 @@ impl<'a, K, V> IndexedEntry<'a, K, V> {
     ///
     /// Computes in **O(n)** time (average).
     #[track_caller]
-    pub fn move_index(mut self, to: usize) {
+    pub fn move_index(self, to: usize) {
         self.map.move_index(self.index, to);
     }
 
@@ -767,7 +816,7 @@ impl<'a, K, V> IndexedEntry<'a, K, V> {
     ///
     /// Computes in **O(1)** time (average).
     #[track_caller]
-    pub fn swap_indices(mut self, other: usize) {
+    pub fn swap_indices(self, other: usize) {
         self.map.swap_indices(self.index, other);
     }
 }
@@ -785,8 +834,8 @@ impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for IndexedEntry<'_, K, V> {
 impl<'a, K, V> From<OccupiedEntry<'a, K, V>> for IndexedEntry<'a, K, V> {
     fn from(other: OccupiedEntry<'a, K, V>) -> Self {
         Self {
-            index: other.index(),
-            map: other.into_ref_mut(),
+            map: other.map,
+            index: other.index,
         }
     }
 }

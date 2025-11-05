@@ -58,18 +58,6 @@ pub(crate) struct RingMapCore<K, V> {
     offset: usize,
 }
 
-/// Mutable references to the parts of an `RingMapCore`.
-///
-/// When using `HashTable::find_entry`, that takes hold of `&mut indices`, so we have to borrow our
-/// `&mut entries` separately, and there's no way to go back to a `&mut RingMapCore`. So this type
-/// is used to implement methods on the split references, and `RingMapCore` can also call those to
-/// avoid duplication.
-struct RefMut<'a, K, V> {
-    indices: &'a mut Indices,
-    entries: &'a mut Entries<K, V>,
-    offset: &'a mut usize,
-}
-
 #[inline(always)]
 fn get_hash<K, V>(
     entries: &Entries<K, V>,
@@ -177,7 +165,7 @@ where
         if self.entries.capacity() < other.entries.len() {
             // If we must resize, match the indices capacity.
             let additional = other.entries.len() - self.entries.len();
-            self.borrow_mut().reserve_entries(additional);
+            self.reserve_entries(additional);
         }
         self.entries.clone_from(&other.entries);
         self.offset = other.offset;
@@ -195,11 +183,6 @@ impl<K, V> RingMapCore<K, V> {
             entries: VecDeque::new(),
             offset: 0,
         }
-    }
-
-    #[inline]
-    fn borrow_mut(&mut self) -> RefMut<'_, K, V> {
-        RefMut::new(&mut self.indices, &mut self.entries, &mut self.offset)
     }
 
     #[inline]
@@ -341,7 +324,7 @@ impl<K, V> RingMapCore<K, V> {
             .reserve(additional, get_hash(&self.entries, self.offset));
         // Only grow entries if necessary, since we also round up capacity.
         if additional > self.entries.capacity() - self.entries.len() {
-            self.borrow_mut().reserve_entries(additional);
+            self.reserve_entries(additional);
         }
     }
 
@@ -443,7 +426,7 @@ impl<K, V> RingMapCore<K, V> {
                 let i = self.entries.len();
                 let oi = OffsetIndex::new(i, self.offset);
                 entry.insert(oi);
-                self.borrow_mut().push_back_entry(hash, key, value);
+                self.push_back_entry(hash, key, value);
                 debug_assert_eq!(self.indices.len(), self.entries.len());
                 (i, None)
             }
@@ -464,7 +447,7 @@ impl<K, V> RingMapCore<K, V> {
             hash_table::Entry::Vacant(entry) => {
                 let oi = OffsetIndex::new(usize::MAX, self.offset);
                 entry.insert(oi);
-                self.borrow_mut().push_front_entry(hash, key, value);
+                self.push_front_entry(hash, key, value);
                 debug_assert_eq!(self.indices.len(), self.entries.len());
                 self.offset = self.offset.wrapping_sub(1); // now MAX is 0
                 (0, None)
@@ -498,18 +481,11 @@ impl<K, V> RingMapCore<K, V> {
                 let i = self.entries.len();
                 let oi = OffsetIndex::new(i, self.offset);
                 entry.insert(oi);
-                self.borrow_mut().push_back_entry(hash, key, value);
+                self.push_back_entry(hash, key, value);
                 debug_assert_eq!(self.indices.len(), self.entries.len());
                 (i, None)
             }
         }
-    }
-
-    /// Replaces the key at the given index,
-    /// *without* checking whether it already exists.
-    #[track_caller]
-    pub(crate) fn replace_index_unique(&mut self, index: usize, hash: HashValue, key: K) -> K {
-        self.borrow_mut().replace_index_unique(index, hash, key).0
     }
 
     /// Remove an entry by shifting all entries that follow it
@@ -522,29 +498,11 @@ impl<K, V> RingMapCore<K, V> {
             Ok(entry) => {
                 let (oi, _) = entry.remove();
                 let index = oi.get(self.offset);
-                let (key, value) = self.borrow_mut().shift_remove_finish(index);
+                let (key, value) = self.shift_remove_finish(index);
                 Some((index, key, value))
             }
             Err(_) => None,
         }
-    }
-
-    /// Remove an entry by shifting all entries that follow it
-    #[inline]
-    pub(crate) fn shift_remove_index(&mut self, index: usize) -> Option<(K, V)> {
-        self.borrow_mut().shift_remove_index(index)
-    }
-
-    #[inline]
-    #[track_caller]
-    pub(super) fn move_index(&mut self, from: usize, to: usize) {
-        self.borrow_mut().move_index(from, to);
-    }
-
-    #[inline]
-    #[track_caller]
-    pub(crate) fn swap_indices(&mut self, a: usize, b: usize) {
-        self.borrow_mut().swap_indices(a, b);
     }
 
     /// Remove an entry by swapping it with the last
@@ -561,17 +519,11 @@ impl<K, V> RingMapCore<K, V> {
             Ok(entry) => {
                 let (oi, _) = entry.remove();
                 let index = oi.get(self.offset);
-                let (key, value) = self.borrow_mut().swap_remove_back_finish(index);
+                let (key, value) = self.swap_remove_back_finish(index);
                 Some((index, key, value))
             }
             Err(_) => None,
         }
-    }
-
-    /// Remove an entry by swapping it with the last
-    #[inline]
-    pub(crate) fn swap_remove_back_index(&mut self, index: usize) -> Option<(K, V)> {
-        self.borrow_mut().swap_remove_back_index(index)
     }
 
     /// Remove an entry by swapping it with the first
@@ -588,17 +540,11 @@ impl<K, V> RingMapCore<K, V> {
             Ok(entry) => {
                 let (oi, _) = entry.remove();
                 let index = oi.get(self.offset);
-                let (key, value) = self.borrow_mut().swap_remove_front_finish(index);
+                let (key, value) = self.swap_remove_front_finish(index);
                 Some((index, key, value))
             }
             Err(_) => None,
         }
-    }
-
-    /// Remove an entry by swapping it with the first
-    #[inline]
-    pub(crate) fn swap_remove_front_index(&mut self, index: usize) -> Option<(K, V)> {
-        self.borrow_mut().swap_remove_front_index(index)
     }
 
     /// Erase `start..end` from `indices`, and shift `end..` indices down to `start..`
@@ -724,38 +670,18 @@ impl<K, V> RingMapCore<K, V> {
         self.entries
             .partition_point(move |a| pred(&a.key, &a.value))
     }
-}
-
-/// Reserve entries capacity, rounded up to match the indices (via `try_capacity`).
-fn reserve_entries<K, V>(entries: &mut Entries<K, V>, additional: usize, try_capacity: usize) {
-    // Use a soft-limit on the maximum capacity, but if the caller explicitly
-    // requested more, do it and let them have the resulting panic.
-    let try_capacity = try_capacity.min(RingMapCore::<K, V>::MAX_ENTRIES_CAPACITY);
-    let try_add = try_capacity - entries.len();
-    if try_add > additional && entries.try_reserve_exact(try_add).is_ok() {
-        return;
-    }
-    entries.reserve_exact(additional);
-}
-
-impl<'a, K, V> RefMut<'a, K, V> {
-    #[inline]
-    fn new(
-        indices: &'a mut Indices,
-        entries: &'a mut Entries<K, V>,
-        offset: &'a mut usize,
-    ) -> Self {
-        Self {
-            indices,
-            entries,
-            offset,
-        }
-    }
 
     /// Reserve entries capacity, rounded up to match the indices
     #[inline]
     fn reserve_entries(&mut self, additional: usize) {
-        reserve_entries(self.entries, additional, self.indices.capacity());
+        // Use a soft-limit on the maximum capacity, but if the caller explicitly
+        // requested more, do it and let them have the resulting panic.
+        let try_capacity = Ord::min(self.indices.capacity(), Self::MAX_ENTRIES_CAPACITY);
+        let try_add = try_capacity - self.entries.len();
+        if try_add > additional && self.entries.try_reserve_exact(try_add).is_ok() {
+            return;
+        }
+        self.entries.reserve_exact(additional);
     }
 
     /// Append a key-value pair to `entries`,
@@ -780,62 +706,40 @@ impl<'a, K, V> RefMut<'a, K, V> {
         self.entries.push_back(Bucket { hash, key, value });
     }
 
-    fn push_front_unique(self, hash: HashValue, key: K, value: V) -> OccupiedEntry<'a, K, V> {
-        let oi = OffsetIndex::new(usize::MAX, *self.offset);
-        let entry =
-            self.indices
-                .insert_unique(hash.get(), oi, get_hash(self.entries, *self.offset));
-        if self.entries.len() == self.entries.capacity() {
-            // We can't call `indices.capacity()` while this `entry` has borrowed it, so we'll have
-            // to amortize growth on our own. It's still an improvement over the basic `Vec::push`
-            // doubling though, since we also consider `MAX_ENTRIES_CAPACITY`.
-            reserve_entries(self.entries, 1, 2 * self.entries.capacity());
-        }
-        self.entries.push_front(Bucket { hash, key, value });
-        *self.offset = self.offset.wrapping_sub(1); // now MAX is 0
-        OccupiedEntry::new(self.entries, self.offset, entry)
+    fn push_front_unique(&mut self, hash: HashValue, key: K, value: V) -> &mut Bucket<K, V> {
+        let oi = OffsetIndex::new(usize::MAX, self.offset);
+        self.indices
+            .insert_unique(hash.get(), oi, get_hash(&self.entries, self.offset));
+        self.push_front_entry(hash, key, value);
+        self.offset = self.offset.wrapping_sub(1); // now MAX is 0
+        &mut self.entries[0]
     }
 
-    fn push_back_unique(self, hash: HashValue, key: K, value: V) -> OccupiedEntry<'a, K, V> {
+    fn push_back_unique(&mut self, hash: HashValue, key: K, value: V) -> &mut Bucket<K, V> {
         let i = self.indices.len();
         debug_assert_eq!(i, self.entries.len());
-        let oi = OffsetIndex::new(i, *self.offset);
-        let entry =
-            self.indices
-                .insert_unique(hash.get(), oi, get_hash(self.entries, *self.offset));
-        if self.entries.len() == self.entries.capacity() {
-            // We can't call `indices.capacity()` while this `entry` has borrowed it, so we'll have
-            // to amortize growth on our own. It's still an improvement over the basic `Vec::push`
-            // doubling though, since we also consider `MAX_ENTRIES_CAPACITY`.
-            reserve_entries(self.entries, 1, 2 * self.entries.capacity());
-        }
-        self.entries.push_back(Bucket { hash, key, value });
-        OccupiedEntry::new(self.entries, self.offset, entry)
+        let oi = OffsetIndex::new(i, self.offset);
+        self.indices
+            .insert_unique(hash.get(), oi, get_hash(&self.entries, self.offset));
+        self.push_back_entry(hash, key, value);
+        &mut self.entries[i]
     }
 
     /// Replaces the key at the given index,
     /// *without* checking whether it already exists.
     #[track_caller]
-    fn replace_index_unique(
-        self,
-        index: usize,
-        hash: HashValue,
-        key: K,
-    ) -> (K, OccupiedEntry<'a, K, V>) {
+    pub(crate) fn replace_index_unique(&mut self, index: usize, hash: HashValue, key: K) -> K {
         // NB: This removal and insertion isn't "no grow" (with unreachable hasher)
         // because hashbrown's tombstones might force a resize anyway.
-        let offset = *self.offset;
+        let offset = self.offset;
         let oi = OffsetIndex::new(index, offset);
-        erase_index(self.indices, offset, self.entries[index].hash, index);
-        let table_entry =
-            self.indices
-                .insert_unique(hash.get(), oi, get_hash(&self.entries, offset));
+        erase_index(&mut self.indices, offset, self.entries[index].hash, index);
+        self.indices
+            .insert_unique(hash.get(), oi, get_hash(&self.entries, offset));
 
         let entry = &mut self.entries[index];
         entry.hash = hash;
-        let old_key = mem::replace(&mut entry.key, key);
-        let occupied = OccupiedEntry::new(self.entries, self.offset, table_entry);
-        (old_key, occupied)
+        mem::replace(&mut entry.key, key)
     }
 
     /// Insert a key-value pair in `entries` at a particular index,
@@ -845,8 +749,8 @@ impl<'a, K, V> RefMut<'a, K, V> {
         assert!(index <= end);
         // Increment others first so we don't have duplicate indices.
         self.increment_indices(index, end);
-        let entries = &*self.entries;
-        let offset = *self.offset;
+        let entries = &self.entries;
+        let offset = self.offset;
         let oi = OffsetIndex::new(index, offset);
         self.indices.insert_unique(hash.get(), oi, move |&i| {
             // Adjust for the incremented indices to find hashes.
@@ -864,10 +768,11 @@ impl<'a, K, V> RefMut<'a, K, V> {
     }
 
     /// Remove an entry by shifting all entries that follow it
-    fn shift_remove_index(&mut self, index: usize) -> Option<(K, V)> {
+    #[inline]
+    pub(crate) fn shift_remove_index(&mut self, index: usize) -> Option<(K, V)> {
         match self.entries.get(index) {
             Some(entry) => {
-                erase_index(self.indices, *self.offset, entry.hash, index);
+                erase_index(&mut self.indices, self.offset, entry.hash, index);
                 Some(self.shift_remove_finish(index))
             }
             None => None,
@@ -887,10 +792,11 @@ impl<'a, K, V> RefMut<'a, K, V> {
     }
 
     /// Remove an entry by swapping it with the last
-    fn swap_remove_back_index(&mut self, index: usize) -> Option<(K, V)> {
+    #[inline]
+    pub(crate) fn swap_remove_back_index(&mut self, index: usize) -> Option<(K, V)> {
         match self.entries.get(index) {
             Some(entry) => {
-                erase_index(self.indices, *self.offset, entry.hash, index);
+                erase_index(&mut self.indices, self.offset, entry.hash, index);
                 Some(self.swap_remove_back_finish(index))
             }
             None => None,
@@ -910,17 +816,18 @@ impl<'a, K, V> RefMut<'a, K, V> {
             // was not last element
             // examine new element in `index` and find it in indices
             let last = self.entries.len();
-            update_index(self.indices, *self.offset, entry.hash, last, index);
+            update_index(&mut self.indices, self.offset, entry.hash, last, index);
         }
 
         (entry.key, entry.value)
     }
 
     /// Remove an entry by swapping it with the first
-    fn swap_remove_front_index(&mut self, index: usize) -> Option<(K, V)> {
+    #[inline]
+    pub(crate) fn swap_remove_front_index(&mut self, index: usize) -> Option<(K, V)> {
         match self.entries.get(index) {
             Some(entry) => {
-                erase_index(self.indices, *self.offset, entry.hash, index);
+                erase_index(&mut self.indices, self.offset, entry.hash, index);
                 Some(self.swap_remove_front_finish(index))
             }
             None => None,
@@ -940,10 +847,10 @@ impl<'a, K, V> RefMut<'a, K, V> {
             // was not first element
             if let Some(entry) = self.entries.get(index - 1) {
                 // examine new element in `index` and find it in indices
-                update_index(self.indices, *self.offset, entry.hash, 0, index);
+                update_index(&mut self.indices, self.offset, entry.hash, 0, index);
             }
         }
-        *self.offset = self.offset.wrapping_add(1);
+        self.offset = self.offset.wrapping_add(1);
 
         (entry.key, entry.value)
     }
@@ -966,7 +873,7 @@ impl<'a, K, V> RefMut<'a, K, V> {
         if target_len <= start_len + end_len {
             // Find each entry in range to decrement its index.
             for (i, entry) in (start..end).zip(iter_slices(target_entries)) {
-                update_index(self.indices, *self.offset, entry.hash, i, i - 1);
+                update_index(&mut self.indices, self.offset, entry.hash, i, i - 1);
             }
         } else if start_len + end_len < half_capacity {
             // Find each entry outside the range and increment them instead.
@@ -975,18 +882,18 @@ impl<'a, K, V> RefMut<'a, K, V> {
                 .rev()
                 .zip(iter_slices(end_entries).rev())
             {
-                update_index(self.indices, *self.offset, entry.hash, i, i + 1);
+                update_index(&mut self.indices, self.offset, entry.hash, i, i + 1);
             }
             for (i, entry) in (0..start_len).rev().zip(iter_slices(start_entries).rev()) {
-                update_index(self.indices, *self.offset, entry.hash, i, i + 1);
+                update_index(&mut self.indices, self.offset, entry.hash, i, i + 1);
             }
-            *self.offset = self.offset.wrapping_add(1);
+            self.offset = self.offset.wrapping_add(1);
         } else {
             // Shift all indices in range.
-            for i in &mut *self.indices {
-                let index = i.get(*self.offset);
+            for i in &mut self.indices {
+                let index = i.get(self.offset);
                 if start <= index && index < end {
-                    *i = OffsetIndex::new(index - 1, *self.offset);
+                    *i = OffsetIndex::new(index - 1, self.offset);
                 }
             }
         }
@@ -1013,90 +920,97 @@ impl<'a, K, V> RefMut<'a, K, V> {
             // Find each entry in range to increment its index, updated in reverse so
             // we never have duplicated indices that might have a hash collision.
             for (i, entry) in (start..end).rev().zip(iter_slices(target_entries).rev()) {
-                update_index(self.indices, *self.offset, entry.hash, i, i + 1);
+                update_index(&mut self.indices, self.offset, entry.hash, i, i + 1);
             }
         } else if start_len + end_len < half_capacity {
             // Find each entry outside the range and decrement them instead.
-            *self.offset = self.offset.wrapping_sub(1);
+            self.offset = self.offset.wrapping_sub(1);
             for (i, entry) in (0..).zip(iter_slices(start_entries)) {
-                update_index(self.indices, *self.offset, entry.hash, i + 1, i);
+                update_index(&mut self.indices, self.offset, entry.hash, i + 1, i);
             }
             for (i, entry) in (end + 1..).zip(iter_slices(end_entries)) {
-                update_index(self.indices, *self.offset, entry.hash, i + 1, i);
+                update_index(&mut self.indices, self.offset, entry.hash, i + 1, i);
             }
         } else {
             // Shift all indices in range.
-            for i in &mut *self.indices {
-                let index = i.get(*self.offset);
+            for i in &mut self.indices {
+                let index = i.get(self.offset);
                 if start <= index && index < end {
-                    *i = OffsetIndex::new(index + 1, *self.offset);
+                    *i = OffsetIndex::new(index + 1, self.offset);
                 }
             }
         }
     }
 
+    #[inline]
     #[track_caller]
-    fn move_index(&mut self, from: usize, to: usize) {
+    pub(super) fn move_index(&mut self, from: usize, to: usize) {
         let from_hash = self.entries[from].hash;
-        let _ = self.entries[to]; // explicit bounds check
         if from != to {
-            // Use a sentinel index so other indices don't collide.
-            let orig_offset = *self.offset;
-            let sentinel = isize::MIN as usize;
-            update_index(self.indices, orig_offset, from_hash, from, sentinel);
+            let _ = self.entries[to]; // explicit bounds check
 
-            // Update all other indices and rotate the entry positions.
-            if from < to {
-                self.decrement_indices(from + 1, to + 1);
-                // self.entries[from..=to].rotate_left(1);
-                if from == 0 {
-                    let entry = self.entries.pop_front().unwrap();
-                    self.entries.insert(to, entry);
-                } else if to + 1 == self.entries.len() {
-                    let entry = self.entries.remove(from).unwrap();
-                    self.entries.push_back(entry);
-                } else {
-                    match sub_slices_mut(self.entries.as_mut_slices(), from, to + 1) {
-                        (xs, []) | ([], xs) => xs.rotate_left(1),
-                        (xs, ys) => {
-                            mem::swap(&mut xs[0], &mut ys[0]);
-                            xs.rotate_left(1);
-                            ys.rotate_left(1);
-                        }
-                    }
-                }
-            } else if to < from {
-                self.increment_indices(to, from);
-                // self.entries[to..=from].rotate_right(1);
-                if to == 0 {
-                    let entry = self.entries.remove(from).unwrap();
-                    self.entries.push_front(entry);
-                } else if from + 1 == self.entries.len() {
-                    let entry = self.entries.pop_back().unwrap();
-                    self.entries.insert(to, entry);
-                } else {
-                    match sub_slices_mut(self.entries.as_mut_slices(), to, from + 1) {
-                        (xs, []) | ([], xs) => xs.rotate_right(1),
-                        (xs, ys) => {
-                            mem::swap(&mut xs[xs.len() - 1], &mut ys[ys.len() - 1]);
-                            xs.rotate_right(1);
-                            ys.rotate_right(1);
-                        }
-                    }
-                }
-            }
+            // Find the bucket index first so we won't lose it among other updated indices.
+            let from_index = OffsetIndex::new(from, self.offset);
+            let bucket = self
+                .indices
+                .find_bucket_index(from_hash.get(), move |&i| i == from_index)
+                .expect("index not found");
 
-            // Change the sentinel index to its final position.
+            self.move_index_inner(from, to);
+
+            // Change the bucket index to its final position.
             // (taking care if `decrement`/`increment_indices` changed the offset)
-            let sentinel = sentinel
-                .wrapping_add(orig_offset)
-                .wrapping_sub(*self.offset);
-            update_index(self.indices, *self.offset, from_hash, sentinel, to);
+            let to_index = OffsetIndex::new(to, self.offset);
+            *self.indices.get_bucket_mut(bucket).unwrap() = to_index;
         }
     }
 
+    fn move_index_inner(&mut self, from: usize, to: usize) {
+        // Update all other indices and rotate the entry positions.
+        if from < to {
+            self.decrement_indices(from + 1, to + 1);
+            // self.entries[from..=to].rotate_left(1);
+            if from == 0 {
+                let entry = self.entries.pop_front().unwrap();
+                self.entries.insert(to, entry);
+            } else if to + 1 == self.entries.len() {
+                let entry = self.entries.remove(from).unwrap();
+                self.entries.push_back(entry);
+            } else {
+                match sub_slices_mut(self.entries.as_mut_slices(), from, to + 1) {
+                    (xs, []) | ([], xs) => xs.rotate_left(1),
+                    (xs, ys) => {
+                        mem::swap(&mut xs[0], &mut ys[0]);
+                        xs.rotate_left(1);
+                        ys.rotate_left(1);
+                    }
+                }
+            }
+        } else if to < from {
+            self.increment_indices(to, from);
+            // self.entries[to..=from].rotate_right(1);
+            if to == 0 {
+                let entry = self.entries.remove(from).unwrap();
+                self.entries.push_front(entry);
+            } else if from + 1 == self.entries.len() {
+                let entry = self.entries.pop_back().unwrap();
+                self.entries.insert(to, entry);
+            } else {
+                match sub_slices_mut(self.entries.as_mut_slices(), to, from + 1) {
+                    (xs, []) | ([], xs) => xs.rotate_right(1),
+                    (xs, ys) => {
+                        mem::swap(&mut xs[xs.len() - 1], &mut ys[ys.len() - 1]);
+                        xs.rotate_right(1);
+                        ys.rotate_right(1);
+                    }
+                }
+            }
+        }
+    }
+
+    #[inline]
     #[track_caller]
-    fn swap_indices(&mut self, a: usize, b: usize) {
+    pub(crate) fn swap_indices(&mut self, a: usize, b: usize) {
         // If they're equal and in-bounds, there's nothing to do.
         if a == b && a < self.entries.len() {
             return;
@@ -1104,9 +1018,9 @@ impl<'a, K, V> RefMut<'a, K, V> {
 
         // We'll get a "nice" bounds-check from indexing `entries`,
         // and then we expect to find it in the table as well.
-        let oa = OffsetIndex::new(a, *self.offset);
-        let ob = OffsetIndex::new(b, *self.offset);
-        match self.indices.get_many_mut(
+        let oa = OffsetIndex::new(a, self.offset);
+        let ob = OffsetIndex::new(b, self.offset);
+        match self.indices.get_disjoint_mut(
             [self.entries[a].hash.get(), self.entries[b].hash.get()],
             move |i, &x| if i == 0 { x == oa } else { x == ob },
         ) {
@@ -1116,28 +1030,6 @@ impl<'a, K, V> RefMut<'a, K, V> {
             }
             _ => panic!("indices not found"),
         }
-    }
-
-    fn binary_search_keys(&self, x: &K) -> Result<usize, usize>
-    where
-        K: Ord,
-    {
-        self.binary_search_by(|p, _| p.cmp(x))
-    }
-
-    fn binary_search_by<'b, F>(&'b self, mut f: F) -> Result<usize, usize>
-    where
-        F: FnMut(&'b K, &'b V) -> Ordering,
-    {
-        self.entries.binary_search_by(move |a| f(&a.key, &a.value))
-    }
-
-    fn binary_search_by_key<'b, B, F>(&'b self, b: &B, mut f: F) -> Result<usize, usize>
-    where
-        F: FnMut(&'b K, &'b V) -> B,
-        B: Ord,
-    {
-        self.binary_search_by(|k, v| f(k, v).cmp(b))
     }
 }
 
