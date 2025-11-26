@@ -1,4 +1,5 @@
-use super::{Bucket, ExtractCore, RingMap, RingMapCore};
+use super::{Bucket, Core, RingMap};
+use crate::inner::extract::ExtractCore;
 
 use alloc::collections::vec_deque::{self, VecDeque};
 use core::hash::{BuildHasher, Hash};
@@ -921,7 +922,7 @@ where
     S: BuildHasher,
 {
     map: &'a mut RingMap<K, V, S>,
-    tail: RingMapCore<K, V>,
+    tail: Core<K, V>,
     drain: vec_deque::IntoIter<Bucket<K, V>>,
     replace_with: I,
 }
@@ -1051,7 +1052,7 @@ pub struct ExtractIf<'a, K, V, F> {
 
 impl<K, V, F> ExtractIf<'_, K, V, F> {
     #[track_caller]
-    pub(super) fn new<R>(core: &mut RingMapCore<K, V>, range: R, pred: F) -> ExtractIf<'_, K, V, F>
+    pub(super) fn new<R>(core: &mut Core<K, V>, range: R, pred: F) -> ExtractIf<'_, K, V, F>
     where
         R: RangeBounds<usize>,
         F: FnMut(&K, &mut V) -> bool,
