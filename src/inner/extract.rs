@@ -1,13 +1,13 @@
 #![allow(unsafe_code)]
 
-use super::{Bucket, RingMapCore};
+use super::{Bucket, Core};
 use crate::util::simplify_range;
 
 use alloc::vec::Vec;
 use core::mem;
 use core::ops::RangeBounds;
 
-impl<K, V> RingMapCore<K, V> {
+impl<K, V> Core<K, V> {
     #[track_caller]
     pub(crate) fn extract<R>(&mut self, range: R) -> ExtractCore<'_, K, V>
     where
@@ -36,7 +36,7 @@ impl<K, V> RingMapCore<K, V> {
 }
 
 pub(crate) struct ExtractCore<'a, K, V> {
-    map: &'a mut RingMapCore<K, V>,
+    map: &'a mut Core<K, V>,
     entries: Vec<Bucket<K, V>>,
     new_len: usize,
     current: usize,

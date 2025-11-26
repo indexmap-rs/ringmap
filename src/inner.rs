@@ -1,16 +1,14 @@
 //! This is the core implementation that doesn't depend on the hasher at all.
 //!
-//! The methods of `RingMapCore` don't use any Hash properties of K.
+//! The methods of `Core` don't use any Hash properties of K.
 //!
 //! It's cleaner to separate them out, then the compiler checks that we are not
 //! using Hash at all in these methods.
 //!
 //! However, we should probably not let this show in the public API or docs.
 
-mod entry;
-mod extract;
-
-pub mod raw_entry_v1;
+pub(crate) mod entry;
+pub(crate) mod extract;
 
 use hashbrown::hash_table;
 
@@ -24,9 +22,6 @@ use crate::{Bucket, Equivalent, HashValue, TryReserveError};
 
 type Indices = hash_table::HashTable<OffsetIndex>;
 type Entries<K, V> = VecDeque<Bucket<K, V>>;
-
-pub use entry::{Entry, IndexedEntry, OccupiedEntry, VacantEntry};
-pub(crate) use extract::ExtractCore;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct OffsetIndex {
@@ -48,8 +43,8 @@ impl OffsetIndex {
 }
 
 /// Core of the map that does not depend on S
-#[derive(Debug)]
-pub(crate) struct RingMapCore<K, V> {
+#[cfg_attr(feature = "test_debug", derive(Debug))]
+pub(crate) struct Core<K, V> {
     /// indices mapping from the entry hash to its index, with an offset.
     /// i.e. `entries[i]` is stored as `i.wrapping_add(offset)` in `indices`.
     indices: Indices,
@@ -149,7 +144,7 @@ fn insert_bulk_no_grow<K, V>(indices: &mut Indices, offset: usize, entries: Pair
     }
 }
 
-impl<K, V> Clone for RingMapCore<K, V>
+impl<K, V> Clone for Core<K, V>
 where
     K: Clone,
     V: Clone,
@@ -172,13 +167,13 @@ where
     }
 }
 
-impl<K, V> RingMapCore<K, V> {
+impl<K, V> Core<K, V> {
     /// The maximum capacity before the `entries` allocation would exceed `isize::MAX`.
     const MAX_ENTRIES_CAPACITY: usize = (isize::MAX as usize) / size_of::<Bucket<K, V>>();
 
     #[inline]
     pub(crate) const fn new() -> Self {
-        RingMapCore {
+        Core {
             indices: Indices::new(),
             entries: VecDeque::new(),
             offset: 0,
@@ -187,7 +182,7 @@ impl<K, V> RingMapCore<K, V> {
 
     #[inline]
     pub(crate) fn with_capacity(n: usize) -> Self {
-        RingMapCore {
+        Core {
             indices: Indices::with_capacity(n),
             entries: VecDeque::with_capacity(n),
             offset: 0,
@@ -407,6 +402,18 @@ impl<K, V> RingMapCore<K, V> {
         Q: ?Sized + Equivalent<K>,
     {
         let eq = equivalent(key, &self.entries, self.offset);
+        let oi = self.indices.find(hash.get(), eq)?;
+        Some(oi.get(self.offset))
+    }
+
+    /// Return the index in `entries` where an equivalent key can be found
+    pub(crate) fn get_index_of_raw<F>(&self, hash: HashValue, mut is_match: F) -> Option<usize>
+    where
+        F: FnMut(&K) -> bool,
+    {
+        let entries = &self.entries;
+        let offset = self.offset;
+        let eq = move |&i: &OffsetIndex| is_match(&entries[i.get(offset)].key);
         let oi = self.indices.find(hash.get(), eq)?;
         Some(oi.get(self.offset))
     }
@@ -715,7 +722,12 @@ impl<K, V> RingMapCore<K, V> {
         &mut self.entries[0]
     }
 
-    fn push_back_unique(&mut self, hash: HashValue, key: K, value: V) -> &mut Bucket<K, V> {
+    pub(crate) fn push_back_unique(
+        &mut self,
+        hash: HashValue,
+        key: K,
+        value: V,
+    ) -> &mut Bucket<K, V> {
         let i = self.indices.len();
         debug_assert_eq!(i, self.entries.len());
         let oi = OffsetIndex::new(i, self.offset);
@@ -744,7 +756,13 @@ impl<K, V> RingMapCore<K, V> {
 
     /// Insert a key-value pair in `entries` at a particular index,
     /// *without* checking whether it already exists.
-    fn shift_insert_unique(&mut self, index: usize, hash: HashValue, key: K, value: V) {
+    pub(super) fn shift_insert_unique(
+        &mut self,
+        index: usize,
+        hash: HashValue,
+        key: K,
+        value: V,
+    ) -> &mut Bucket<K, V> {
         let end = self.indices.len();
         assert!(index <= end);
         // Increment others first so we don't have duplicate indices.
@@ -765,6 +783,7 @@ impl<K, V> RingMapCore<K, V> {
             self.reserve_entries(1);
         }
         self.entries.insert(index, Bucket { hash, key, value });
+        &mut self.entries[index]
     }
 
     /// Remove an entry by shifting all entries that follow it
@@ -1036,8 +1055,5 @@ impl<K, V> RingMapCore<K, V> {
 #[test]
 fn assert_send_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
-    assert_send_sync::<RingMapCore<i32, i32>>();
-    assert_send_sync::<Entry<'_, i32, i32>>();
-    assert_send_sync::<IndexedEntry<'_, i32, i32>>();
-    assert_send_sync::<raw_entry_v1::RawEntryMut<'_, i32, i32, ()>>();
+    assert_send_sync::<Core<i32, i32>>();
 }

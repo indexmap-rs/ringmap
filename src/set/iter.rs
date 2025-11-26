@@ -1,4 +1,5 @@
-use crate::map::{ExtractCore, RingMapCore};
+use crate::inner::extract::ExtractCore;
+use crate::inner::Core;
 
 use super::{Bucket, RingSet};
 use crate::map::Buckets;
@@ -637,7 +638,7 @@ pub struct ExtractIf<'a, T, F> {
 
 impl<T, F> ExtractIf<'_, T, F> {
     #[track_caller]
-    pub(super) fn new<R>(core: &mut RingMapCore<T, ()>, range: R, pred: F) -> ExtractIf<'_, T, F>
+    pub(super) fn new<R>(core: &mut Core<T, ()>, range: R, pred: F) -> ExtractIf<'_, T, F>
     where
         R: RangeBounds<usize>,
         F: FnMut(&T) -> bool,
