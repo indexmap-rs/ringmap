@@ -1,5 +1,10 @@
 # Releases
 
+## 0.2.2 (2026-01-07)
+
+- Added `map::Slice::split_at_checked` and `split_at_mut_checked`.
+- Added `set::Slice::split_at_checked`.
+
 ## 0.2.1 (2025-11-20)
 
 - Simplified a lot of internals using `hashbrown`'s new bucket API.
