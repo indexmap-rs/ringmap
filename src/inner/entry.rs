@@ -23,7 +23,7 @@ impl<'a, K, V> Entry<'a, K, V> {
     }
 }
 
-/// A view into an occupied entry in an [`RingMap`][crate::RingMap].
+/// A view into an occupied entry in a [`RingMap`][crate::RingMap].
 /// It is part of the [`Entry`] enum.
 pub struct OccupiedEntry<'a, K, V> {
     map: &'a mut Core<K, V>,
@@ -252,7 +252,7 @@ impl<'a, K, V> From<IndexedEntry<'a, K, V>> for OccupiedEntry<'a, K, V> {
     }
 }
 
-/// A view into a vacant entry in an [`RingMap`][crate::RingMap].
+/// A view into a vacant entry in a [`RingMap`][crate::RingMap].
 /// It is part of the [`Entry`] enum.
 pub struct VacantEntry<'a, K, V> {
     map: &'a mut Core<K, V>,

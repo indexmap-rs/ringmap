@@ -9,7 +9,7 @@ use core::fmt;
 use core::hash::{Hash, Hasher};
 use core::ops::{self, Bound, Index, IndexMut, RangeBounds};
 
-/// A dynamically-sized slice of key-value pairs in an [`RingMap`][super::RingMap].
+/// A dynamically-sized slice of key-value pairs in a [`RingMap`][super::RingMap].
 ///
 /// This supports indexed operations much like a `[(K, V)]` slice,
 /// but not any hashed operations on the map keys.

@@ -1,4 +1,4 @@
-//! Functions to serialize and deserialize an [`RingMap`] as an ordered sequence.
+//! Functions to serialize and deserialize a [`RingMap`] as an ordered sequence.
 //!
 //! The default `serde` implementation serializes `RingMap` as a normal map,
 //! but there is no guarantee that serialization formats will preserve the order
@@ -60,7 +60,7 @@ where
     }
 }
 
-/// Serializes an [`RingMap`] as an ordered sequence.
+/// Serializes a [`RingMap`] as an ordered sequence.
 ///
 /// This function may be used in a field attribute for deriving [`Serialize`]:
 ///
@@ -113,7 +113,7 @@ where
     }
 }
 
-/// Deserializes an [`RingMap`] from an ordered sequence.
+/// Deserializes a [`RingMap`] from an ordered sequence.
 ///
 /// This function may be used in a field attribute for deriving [`Deserialize`]:
 ///

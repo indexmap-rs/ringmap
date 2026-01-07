@@ -294,7 +294,7 @@ impl<K, V> Default for BucketsMut<'_, K, V> {
     }
 }
 
-/// An iterator over the entries of an [`RingMap`].
+/// An iterator over the entries of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::iter`] method.
 /// See its documentation for more.
@@ -357,7 +357,7 @@ impl<K, V> Default for Iter<'_, K, V> {
     }
 }
 
-/// A mutable iterator over the entries of an [`RingMap`].
+/// A mutable iterator over the entries of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::iter_mut`] method.
 /// See its documentation for more.
@@ -412,7 +412,7 @@ impl<K, V> Default for IterMut<'_, K, V> {
     }
 }
 
-/// A mutable iterator over the entries of an [`RingMap`].
+/// A mutable iterator over the entries of a [`RingMap`].
 ///
 /// This `struct` is created by the [`MutableKeys::iter_mut2`][super::MutableKeys::iter_mut2] method.
 /// See its documentation for more.
@@ -461,7 +461,7 @@ impl<K, V> Default for IterMut2<'_, K, V> {
     }
 }
 
-/// An owning iterator over the entries of an [`RingMap`].
+/// An owning iterator over the entries of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::into_iter`] method
 /// (provided by the [`IntoIterator`] trait). See its documentation for more.
@@ -513,7 +513,7 @@ impl<K, V> Default for IntoIter<K, V> {
     }
 }
 
-/// A draining iterator over the entries of an [`RingMap`].
+/// A draining iterator over the entries of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::drain`] method.
 /// See its documentation for more.
@@ -554,7 +554,7 @@ impl<K: fmt::Debug, V: fmt::Debug> fmt::Debug for Drain<'_, K, V> {
     }
 }
 
-/// An iterator over the keys of an [`RingMap`].
+/// An iterator over the keys of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::keys`] method.
 /// See its documentation for more.
@@ -691,7 +691,7 @@ impl<K, V> Index<usize> for Keys<'_, K, V> {
     }
 }
 
-/// An owning iterator over the keys of an [`RingMap`].
+/// An owning iterator over the keys of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::into_keys`] method.
 /// See its documentation for more.
@@ -742,7 +742,7 @@ impl<K, V> Default for IntoKeys<K, V> {
     }
 }
 
-/// An iterator over the values of an [`RingMap`].
+/// An iterator over the values of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::values`] method.
 /// See its documentation for more.
@@ -805,7 +805,7 @@ impl<K, V> Default for Values<'_, K, V> {
     }
 }
 
-/// A mutable iterator over the values of an [`RingMap`].
+/// A mutable iterator over the values of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::values_mut`] method.
 /// See its documentation for more.
@@ -860,7 +860,7 @@ impl<K, V> Default for ValuesMut<'_, K, V> {
     }
 }
 
-/// An owning iterator over the values of an [`RingMap`].
+/// An owning iterator over the values of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::into_values`] method.
 /// See its documentation for more.

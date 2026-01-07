@@ -49,7 +49,7 @@ where
     }
 }
 
-/// A parallel owning iterator over the entries of an [`RingMap`].
+/// A parallel owning iterator over the entries of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::into_par_iter`] method
 /// (provided by rayon's [`IntoParallelIterator`] trait). See its documentation for more.
@@ -175,7 +175,7 @@ where
     }
 }
 
-/// A parallel iterator over the entries of an [`RingMap`].
+/// A parallel iterator over the entries of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::par_iter`] method
 /// (provided by rayon's [`IntoParallelRefIterator`] trait). See its documentation for more.
@@ -305,7 +305,7 @@ where
     }
 }
 
-/// A parallel mutable iterator over the entries of an [`RingMap`].
+/// A parallel mutable iterator over the entries of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::par_iter_mut`] method
 /// (provided by rayon's [`IntoParallelRefMutIterator`] trait). See its documentation for more.
@@ -347,7 +347,7 @@ where
     }
 }
 
-/// A parallel draining iterator over the entries of an [`RingMap`].
+/// A parallel draining iterator over the entries of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::par_drain`] method
 /// (provided by rayon's [`ParallelDrainRange`] trait). See its documentation for more.
@@ -444,7 +444,7 @@ where
     }
 }
 
-/// A parallel iterator over the keys of an [`RingMap`].
+/// A parallel iterator over the keys of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::par_keys`] method.
 /// See its documentation for more.
@@ -477,7 +477,7 @@ impl<K: Sync, V: Sync> IndexedParallelIterator for ParKeys<'_, K, V> {
     indexed_parallel_iterator_methods!(Bucket::key_ref);
 }
 
-/// A parallel iterator over the values of an [`RingMap`].
+/// A parallel iterator over the values of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::par_values`] method.
 /// See its documentation for more.
@@ -658,7 +658,7 @@ where
     }
 }
 
-/// A parallel mutable iterator over the values of an [`RingMap`].
+/// A parallel mutable iterator over the values of a [`RingMap`].
 ///
 /// This `struct` is created by the [`RingMap::par_values_mut`] method.
 /// See its documentation for more.

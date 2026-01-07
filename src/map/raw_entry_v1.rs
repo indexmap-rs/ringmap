@@ -168,7 +168,7 @@ impl<K, V, S> RawEntryApiV1<K, V, S> for RingMap<K, V, S> {
     }
 }
 
-/// A builder for computing where in an [`RingMap`] a key-value pair would be stored.
+/// A builder for computing where in a [`RingMap`] a key-value pair would be stored.
 ///
 /// This `struct` is created by the [`RingMap::raw_entry_v1`] method, provided by the
 /// [`RawEntryApiV1`] trait. See its documentation for more.
@@ -233,7 +233,7 @@ impl<'a, K, V, S> RawEntryBuilder<'a, K, V, S> {
     }
 }
 
-/// A builder for computing where in an [`RingMap`] a key-value pair would be stored.
+/// A builder for computing where in a [`RingMap`] a key-value pair would be stored.
 ///
 /// This `struct` is created by the [`RingMap::raw_entry_mut_v1`] method, provided by the
 /// [`RawEntryApiV1`] trait. See its documentation for more.
@@ -358,7 +358,7 @@ impl<'a, K, V, S> RawEntryMut<'a, K, V, S> {
     }
 }
 
-/// A raw view into an occupied entry in an [`RingMap`].
+/// A raw view into an occupied entry in a [`RingMap`].
 /// It is part of the [`RawEntryMut`] enum.
 pub struct RawOccupiedEntryMut<'a, K, V, S> {
     inner: OccupiedEntry<'a, K, V>,
@@ -551,7 +551,7 @@ impl<'a, K, V, S> RawOccupiedEntryMut<'a, K, V, S> {
     }
 }
 
-/// A view into a vacant raw entry in an [`RingMap`].
+/// A view into a vacant raw entry in a [`RingMap`].
 /// It is part of the [`RawEntryMut`] enum.
 pub struct RawVacantEntryMut<'a, K, V, S> {
     map: &'a mut Core<K, V>,
