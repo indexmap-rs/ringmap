@@ -1,4 +1,4 @@
-/// Create an [`RingMap`][crate::RingMap] from a list of key-value pairs
+/// Create a [`RingMap`][crate::RingMap] from a list of key-value pairs
 /// and a [`BuildHasherDefault`][core::hash::BuildHasherDefault]-wrapped custom hasher.
 ///
 /// ## Example
@@ -38,7 +38,7 @@ macro_rules! ringmap_with_default {
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 #[macro_export]
-/// Create an [`RingMap`][crate::RingMap] from a list of key-value pairs
+/// Create a [`RingMap`][crate::RingMap] from a list of key-value pairs
 ///
 /// ## Example
 ///
@@ -72,7 +72,7 @@ macro_rules! ringmap {
     };
 }
 
-/// Create an [`RingSet`][crate::RingSet] from a list of values
+/// Create a [`RingSet`][crate::RingSet] from a list of values
 /// and a [`BuildHasherDefault`][core::hash::BuildHasherDefault]-wrapped custom hasher.
 ///
 /// ## Example
@@ -112,7 +112,7 @@ macro_rules! ringset_with_default {
 #[cfg(feature = "std")]
 #[cfg_attr(docsrs, doc(cfg(feature = "std")))]
 #[macro_export]
-/// Create an [`RingSet`][crate::RingSet] from a list of values
+/// Create a [`RingSet`][crate::RingSet] from a list of values
 ///
 /// ## Example
 ///

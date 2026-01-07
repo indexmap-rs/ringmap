@@ -8,7 +8,7 @@ use core::fmt;
 use core::hash::{Hash, Hasher};
 use core::ops::{self, Bound, Index, RangeBounds};
 
-/// A dynamically-sized slice of values in an [`RingSet`][super::RingSet].
+/// A dynamically-sized slice of values in a [`RingSet`][super::RingSet].
 ///
 /// This supports indexed operations much like a `[T]` slice,
 /// but not any hashed operations on the values.

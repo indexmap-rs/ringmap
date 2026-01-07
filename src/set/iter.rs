@@ -28,7 +28,7 @@ impl<T, S> IntoIterator for RingSet<T, S> {
     }
 }
 
-/// An iterator over the items of an [`RingSet`].
+/// An iterator over the items of a [`RingSet`].
 ///
 /// This `struct` is created by the [`RingSet::iter`] method.
 /// See its documentation for more.
@@ -90,7 +90,7 @@ impl<T> Default for Iter<'_, T> {
     }
 }
 
-/// An owning iterator over the items of an [`RingSet`].
+/// An owning iterator over the items of a [`RingSet`].
 ///
 /// This `struct` is created by the [`RingSet::into_iter`] method
 /// (provided by the [`IntoIterator`] trait). See its documentation for more.
@@ -142,7 +142,7 @@ impl<T> Default for IntoIter<T> {
     }
 }
 
-/// A draining iterator over the items of an [`RingSet`].
+/// A draining iterator over the items of a [`RingSet`].
 ///
 /// This `struct` is created by the [`RingSet::drain`] method.
 /// See its documentation for more.

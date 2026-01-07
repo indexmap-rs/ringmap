@@ -1883,7 +1883,7 @@ where
     K: Hash + Eq,
     S: BuildHasher + Default,
 {
-    /// Create an `RingMap` from the sequence of key-value pairs in the
+    /// Create a `RingMap` from the sequence of key-value pairs in the
     /// iterable.
     ///
     /// `from_iter` uses the same logic as `extend`. See

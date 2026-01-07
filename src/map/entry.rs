@@ -2,7 +2,7 @@ use super::{Bucket, Core};
 use crate::inner::entry::{OccupiedEntry, VacantEntry};
 use core::{fmt, mem};
 
-/// Entry for an existing key-value pair in an [`RingMap`][crate::RingMap]
+/// Entry for an existing key-value pair in a [`RingMap`][crate::RingMap]
 /// or a vacant location to insert one.
 pub enum Entry<'a, K, V> {
     /// Existing slot with equivalent key.
@@ -237,7 +237,7 @@ impl<K: fmt::Debug, V> fmt::Debug for VacantEntry<'_, K, V> {
     }
 }
 
-/// A view into an occupied entry in an [`RingMap`][crate::RingMap] obtained by index.
+/// A view into an occupied entry in a [`RingMap`][crate::RingMap] obtained by index.
 ///
 /// This `struct` is created from the [`get_index_entry`][crate::RingMap::get_index_entry] method.
 pub struct IndexedEntry<'a, K, V> {

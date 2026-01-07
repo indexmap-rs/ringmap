@@ -49,7 +49,7 @@ where
     }
 }
 
-/// A parallel owning iterator over the items of an [`RingSet`].
+/// A parallel owning iterator over the items of a [`RingSet`].
 ///
 /// This `struct` is created by the [`RingSet::into_par_iter`] method
 /// (provided by rayon's [`IntoParallelIterator`] trait). See its documentation for more.
@@ -102,7 +102,7 @@ where
     }
 }
 
-/// A parallel iterator over the items of an [`RingSet`].
+/// A parallel iterator over the items of a [`RingSet`].
 ///
 /// This `struct` is created by the [`RingSet::par_iter`] method
 /// (provided by rayon's [`IntoParallelRefIterator`] trait). See its documentation for more.
@@ -151,7 +151,7 @@ where
     }
 }
 
-/// A parallel draining iterator over the items of an [`RingSet`].
+/// A parallel draining iterator over the items of a [`RingSet`].
 ///
 /// This `struct` is created by the [`RingSet::par_drain`] method
 /// (provided by rayon's [`ParallelDrainRange`] trait). See its documentation for more.
