@@ -39,13 +39,13 @@ use core::cmp::Ordering;
 use core::fmt;
 use core::hash::{BuildHasher, Hash, Hasher};
 use core::mem;
-use core::ops::{Index, IndexMut, RangeBounds};
+use core::ops::{Index, IndexMut, Range, RangeBounds};
 
 #[cfg(feature = "std")]
 use std::hash::RandomState;
 
 use crate::inner::Core;
-use crate::util::third;
+use crate::util::{simplify_range, third, try_simplify_range};
 use crate::{Bucket, Equivalent, GetDisjointMutError, HashValue, TryReserveError};
 
 /// A hash table where the iteration order of the key-value pairs is independent
@@ -1589,6 +1589,91 @@ impl<K, V, S> RingMap<K, V, S> {
         let (head, tail) = self.as_mut_slices();
         let key_values = Slice::get_disjoint_opt_mut(head, tail, indices)?;
         Ok(key_values.map(Option::unwrap))
+    }
+
+    #[track_caller]
+    pub(crate) fn split_range<R>(&self, range: R) -> (Range<usize>, Range<usize>)
+    where
+        R: RangeBounds<usize>,
+    {
+        let entries = self.as_entries();
+        let range = simplify_range(range, entries.len());
+        let mid = entries.as_slices().0.len();
+        (
+            range.start.min(mid)..range.end.min(mid),
+            range.start.saturating_sub(mid)..range.end.saturating_sub(mid),
+        )
+    }
+
+    /// Returns an iterator of key-value pairs in the given range of indices.
+    ///
+    /// ***Panics*** if the starting point is greater than the end point or if
+    /// the end point is greater than the length of the map.
+    #[track_caller]
+    pub fn range<R>(&self, range: R) -> Iter<'_, K, V>
+    where
+        R: RangeBounds<usize>,
+    {
+        let (head_range, tail_range) = self.split_range(range);
+        let (head, tail) = self.as_entries().as_slices();
+        Iter::from_slices(&head[head_range], &tail[tail_range])
+    }
+
+    /// Returns a mutable iterator of key-value pairs in the given range of indices.
+    ///
+    /// ***Panics*** if the starting point is greater than the end point or if
+    /// the end point is greater than the length of the map.
+    #[track_caller]
+    pub fn range_mut<R>(&mut self, range: R) -> IterMut<'_, K, V>
+    where
+        R: RangeBounds<usize>,
+    {
+        let (head_range, tail_range) = self.split_range(range);
+        let (head, tail) = self.as_entries_mut().as_mut_slices();
+        IterMut::from_mut_slices(&mut head[head_range], &mut tail[tail_range])
+    }
+
+    pub(crate) fn try_split_range<R>(&self, range: R) -> Option<(Range<usize>, Range<usize>)>
+    where
+        R: RangeBounds<usize>,
+    {
+        let entries = self.as_entries();
+        let range = try_simplify_range(range, entries.len())?;
+        let mid = entries.as_slices().0.len();
+        Some((
+            range.start.min(mid)..range.end.min(mid),
+            range.start.saturating_sub(mid)..range.end.saturating_sub(mid),
+        ))
+    }
+
+    /// Returns head and tail slices of key-value pairs in the given range of indices.
+    ///
+    /// Valid indices are `0 <= index < self.len()`.
+    pub fn get_range<R>(&self, range: R) -> Option<(&Slice<K, V>, &Slice<K, V>)>
+    where
+        R: RangeBounds<usize>,
+    {
+        let (head_range, tail_range) = self.try_split_range(range)?;
+        let (head, tail) = self.as_entries().as_slices();
+        Some((
+            Slice::from_slice(&head[head_range]),
+            Slice::from_slice(&tail[tail_range]),
+        ))
+    }
+
+    /// Returns mutable head and tail slices of key-value pairs in the given range of indices.
+    ///
+    /// Valid indices are `0 <= index < self.len()`.
+    pub fn get_range_mut<R>(&mut self, range: R) -> Option<(&mut Slice<K, V>, &mut Slice<K, V>)>
+    where
+        R: RangeBounds<usize>,
+    {
+        let (head_range, tail_range) = self.try_split_range(range)?;
+        let (head, tail) = self.as_entries_mut().as_mut_slices();
+        Some((
+            Slice::from_mut_slice(&mut head[head_range]),
+            Slice::from_mut_slice(&mut tail[tail_range]),
+        ))
     }
 
     /// Get the first key-value pair

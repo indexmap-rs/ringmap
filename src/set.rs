@@ -64,7 +64,7 @@ type Bucket<T> = super::Bucket<T, ()>;
 ///
 /// # Complexity
 ///
-/// Internally, `RingSet<T, S>` just holds an [`RingMap<T, (), S>`](RingMap). Thus the complexity
+/// Internally, `RingSet<T, S>` just holds a [`RingMap<T, (), S>`](RingMap). Thus the complexity
 /// of the two are the same for most methods.
 ///
 /// # Examples
@@ -1268,6 +1268,35 @@ impl<T, S> RingSet<T, S> {
     /// Computes in **O(1)** time.
     pub fn get_index(&self, index: usize) -> Option<&T> {
         self.as_entries().get(index).map(Bucket::key_ref)
+    }
+
+    /// Returns an iterator of values in the given range of indices.
+    ///
+    /// ***Panics*** if the starting point is greater than the end point or if
+    /// the end point is greater than the length of the set.
+    #[track_caller]
+    pub fn range<R>(&self, range: R) -> Iter<'_, T>
+    where
+        R: RangeBounds<usize>,
+    {
+        let (head_range, tail_range) = self.map.split_range(range);
+        let (head, tail) = self.as_entries().as_slices();
+        Iter::from_slices(&head[head_range], &tail[tail_range])
+    }
+
+    /// Returns head and tail slices of values in the given range of indices.
+    ///
+    /// Valid indices are `0 <= index < self.len()`.
+    pub fn get_range<R>(&self, range: R) -> Option<(&Slice<T>, &Slice<T>)>
+    where
+        R: RangeBounds<usize>,
+    {
+        let (head_range, tail_range) = self.map.try_split_range(range)?;
+        let (head, tail) = self.as_entries().as_slices();
+        Some((
+            Slice::from_slice(&head[head_range]),
+            Slice::from_slice(&tail[tail_range]),
+        ))
     }
 
     /// Get the first value
