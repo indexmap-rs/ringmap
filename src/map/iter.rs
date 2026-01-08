@@ -43,16 +43,17 @@ pub(crate) struct Buckets<'a, K, V> {
 impl<'a, K, V> Buckets<'a, K, V> {
     pub(crate) fn new(entries: &'a VecDeque<Bucket<K, V>>) -> Self {
         let (head, tail) = entries.as_slices();
-        Self {
-            head: head.iter(),
-            tail: tail.iter(),
-        }
+        Self::from_slices(head, tail)
     }
 
     pub(crate) fn from_slice(slice: &'a [Bucket<K, V>]) -> Self {
+        Self::from_slices(slice, &[])
+    }
+
+    pub(crate) fn from_slices(head: &'a [Bucket<K, V>], tail: &'a [Bucket<K, V>]) -> Self {
         Self {
-            head: slice.iter(),
-            tail: [].iter(),
+            head: head.iter(),
+            tail: tail.iter(),
         }
     }
 }
@@ -174,24 +175,22 @@ struct BucketsMut<'a, K, V> {
 impl<'a, K, V> BucketsMut<'a, K, V> {
     fn new(entries: &'a mut VecDeque<Bucket<K, V>>) -> Self {
         let (head, tail) = entries.as_mut_slices();
+        Self::from_mut_slices(head, tail)
+    }
+
+    fn from_mut_slice(slice: &'a mut [Bucket<K, V>]) -> Self {
+        Self::from_mut_slices(slice, &mut [])
+    }
+
+    fn from_mut_slices(head: &'a mut [Bucket<K, V>], tail: &'a mut [Bucket<K, V>]) -> Self {
         Self {
             head: head.iter_mut(),
             tail: tail.iter_mut(),
         }
     }
 
-    fn from_mut_slice(slice: &'a mut [Bucket<K, V>]) -> Self {
-        Self {
-            head: slice.iter_mut(),
-            tail: [].iter_mut(),
-        }
-    }
-
     fn iter(&self) -> Buckets<'_, K, V> {
-        Buckets {
-            head: self.head.as_slice().iter(),
-            tail: self.tail.as_slice().iter(),
-        }
+        Buckets::from_slices(self.head.as_slice(), self.tail.as_slice())
     }
 }
 
@@ -314,6 +313,12 @@ impl<'a, K, V> Iter<'a, K, V> {
             iter: Buckets::from_slice(slice),
         }
     }
+
+    pub(super) fn from_slices(head: &'a [Bucket<K, V>], tail: &'a [Bucket<K, V>]) -> Self {
+        Self {
+            iter: Buckets::from_slices(head, tail),
+        }
+    }
 }
 
 impl<'a, K, V> Iterator for Iter<'a, K, V> {
@@ -375,6 +380,15 @@ impl<'a, K, V> IterMut<'a, K, V> {
     pub(super) fn from_mut_slice(slice: &'a mut [Bucket<K, V>]) -> Self {
         Self {
             iter: BucketsMut::from_mut_slice(slice),
+        }
+    }
+
+    pub(super) fn from_mut_slices(
+        head: &'a mut [Bucket<K, V>],
+        tail: &'a mut [Bucket<K, V>],
+    ) -> Self {
+        Self {
+            iter: BucketsMut::from_mut_slices(head, tail),
         }
     }
 }

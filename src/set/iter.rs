@@ -48,6 +48,12 @@ impl<'a, T> Iter<'a, T> {
             iter: Buckets::from_slice(slice),
         }
     }
+
+    pub(super) fn from_slices(head: &'a [Bucket<T>], tail: &'a [Bucket<T>]) -> Self {
+        Self {
+            iter: Buckets::from_slices(head, tail),
+        }
+    }
 }
 
 impl<'a, T> Iterator for Iter<'a, T> {
