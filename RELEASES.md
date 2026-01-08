@@ -1,5 +1,10 @@
 # Releases
 
+## 0.2.3 (2026-01-08)
+
+- Added `RingMap::get_range`, `get_range_mut`, `range`, and `range_mut`.
+- Added `RingSet::get_range` and `range`.
+
 ## 0.2.2 (2026-01-07)
 
 - Added `map::Slice::split_at_checked` and `split_at_mut_checked`.
