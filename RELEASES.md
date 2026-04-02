@@ -1,5 +1,11 @@
 # Releases
 
+## 0.2.4 (2026-04-02)
+
+- Made some `Slice` methods `const`:
+  - `map::Slice::{first,last,split_at,split_at_checked,split_first,split_last}`
+  - `set::Slice::{first,last,split_at,split_at_checked,split_first,split_last}`
+
 ## 0.2.3 (2026-01-08)
 
 - Added `RingMap::get_range`, `get_range_mut`, `range`, and `range_mut`.
