@@ -1,5 +1,5 @@
-use ringmap::ringmap;
 use ringmap::Equivalent;
+use ringmap::ringmap;
 
 use std::hash::Hash;
 

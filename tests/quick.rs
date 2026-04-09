@@ -557,10 +557,11 @@ where
 
     // Check both iteration order and hash lookups
     assert!(map.keys().eq(vec.iter()));
-    assert!(vec
-        .iter()
-        .enumerate()
-        .all(|(i, x)| { map.get_index_of(x) == Some(i) }));
+    assert!(
+        vec.iter()
+            .enumerate()
+            .all(|(i, x)| { map.get_index_of(x) == Some(i) })
+    );
     TestResult::passed()
 }
 
@@ -584,10 +585,11 @@ where
 
     // Check both iteration order and hash lookups
     assert!(map.keys().eq(vec.iter()));
-    assert!(vec
-        .iter()
-        .enumerate()
-        .all(|(i, x)| { map.get_index_of(x) == Some(i) }));
+    assert!(
+        vec.iter()
+            .enumerate()
+            .all(|(i, x)| { map.get_index_of(x) == Some(i) })
+    );
     TestResult::passed()
 }
 
@@ -613,10 +615,11 @@ where
 
     // Check both iteration order and hash lookups
     assert!(map.keys().eq(vec.iter()));
-    assert!(vec
-        .iter()
-        .enumerate()
-        .all(|(i, x)| { map.get_index_of(x) == Some(i) }));
+    assert!(
+        vec.iter()
+            .enumerate()
+            .all(|(i, x)| { map.get_index_of(x) == Some(i) })
+    );
     TestResult::passed()
 }
 

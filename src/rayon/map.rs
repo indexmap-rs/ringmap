@@ -15,9 +15,9 @@ use core::fmt;
 use core::hash::{BuildHasher, Hash};
 use core::ops::RangeBounds;
 
-use crate::map::Slice;
 use crate::Bucket;
 use crate::RingMap;
+use crate::map::Slice;
 
 impl<K, V, S> IntoParallelIterator for RingMap<K, V, S>
 where

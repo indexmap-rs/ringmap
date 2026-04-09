@@ -13,9 +13,9 @@ pub use self::iter::{
 pub use self::mutable::MutableValues;
 pub use self::slice::Slice;
 
+use crate::TryReserveError;
 #[cfg(feature = "rayon")]
 pub use crate::rayon::set as rayon;
-use crate::TryReserveError;
 
 #[cfg(feature = "std")]
 use std::hash::RandomState;

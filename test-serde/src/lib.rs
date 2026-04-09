@@ -1,9 +1,9 @@
 #![cfg(test)]
 
 use fnv::FnvBuildHasher;
-use ringmap::{ringmap, ringset, RingMap, RingSet};
+use ringmap::{RingMap, RingSet, ringmap, ringset};
 use serde::{Deserialize, Serialize};
-use serde_test::{assert_tokens, Token};
+use serde_test::{Token, assert_tokens};
 
 #[test]
 fn test_serde_map() {
