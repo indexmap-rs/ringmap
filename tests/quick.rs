@@ -61,7 +61,7 @@ macro_rules! quickcheck_limit {
                     let mut quickcheck = QuickCheck::new();
                     if cfg!(miri) {
                         quickcheck = quickcheck
-                            .gen(Gen::new(10))
+                            .rng(Gen::new(10))
                             .tests(10)
                             .max_tests(100);
                     }
@@ -219,7 +219,7 @@ quickcheck_limit! {
                 }
             }
         }
-        let hsorted = hmap.iter().sorted_by_key(|(&k, _)| (k.unsigned_abs(), k));
+        let hsorted = hmap.iter().sorted_by_key(|&(&k, _)| (k.unsigned_abs(), k));
         itertools::assert_equal(hsorted, &map);
         itertools::assert_equal(&map, &map2);
         true
@@ -557,10 +557,11 @@ where
 
     // Check both iteration order and hash lookups
     assert!(map.keys().eq(vec.iter()));
-    assert!(vec
-        .iter()
-        .enumerate()
-        .all(|(i, x)| { map.get_index_of(x) == Some(i) }));
+    assert!(
+        vec.iter()
+            .enumerate()
+            .all(|(i, x)| { map.get_index_of(x) == Some(i) })
+    );
     TestResult::passed()
 }
 
@@ -584,10 +585,11 @@ where
 
     // Check both iteration order and hash lookups
     assert!(map.keys().eq(vec.iter()));
-    assert!(vec
-        .iter()
-        .enumerate()
-        .all(|(i, x)| { map.get_index_of(x) == Some(i) }));
+    assert!(
+        vec.iter()
+            .enumerate()
+            .all(|(i, x)| { map.get_index_of(x) == Some(i) })
+    );
     TestResult::passed()
 }
 
@@ -613,10 +615,11 @@ where
 
     // Check both iteration order and hash lookups
     assert!(map.keys().eq(vec.iter()));
-    assert!(vec
-        .iter()
-        .enumerate()
-        .all(|(i, x)| { map.get_index_of(x) == Some(i) }));
+    assert!(
+        vec.iter()
+            .enumerate()
+            .all(|(i, x)| { map.get_index_of(x) == Some(i) })
+    );
     TestResult::passed()
 }
 

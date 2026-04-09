@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use fnv::FnvBuildHasher;
-use ringmap::{ringmap, ringset, RingMap, RingSet};
-use sval_test::{assert_tokens, Token};
+use ringmap::{RingMap, RingSet, ringmap, ringset};
+use sval_test::{Token, assert_tokens};
 
 #[test]
 fn test_sval_map() {

@@ -1,5 +1,5 @@
-use crate::inner::extract::ExtractCore;
 use crate::inner::Core;
+use crate::inner::extract::ExtractCore;
 
 use super::{Bucket, RingSet};
 use crate::map::Buckets;

@@ -25,10 +25,10 @@ use core::fmt::{self, Formatter};
 use core::hash::{BuildHasher, Hash};
 use core::marker::PhantomData;
 
+use crate::RingMap;
 use crate::map::Slice as MapSlice;
 use crate::serde::cautious_capacity;
 use crate::set::Slice as SetSlice;
-use crate::RingMap;
 
 /// Serializes a [`map::Slice`][MapSlice] as an ordered sequence.
 ///
