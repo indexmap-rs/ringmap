@@ -74,7 +74,7 @@
 //!
 //! ### Rust Version
 //!
-//! This version of ringmap requires Rust 1.82 or later.
+//! This version of ringmap requires Rust 1.85 or later.
 //!
 //! The ringmap 0.2 release series will use a carefully considered version
 //! upgrade policy, where in a later 0.x version, we will raise the minimum
