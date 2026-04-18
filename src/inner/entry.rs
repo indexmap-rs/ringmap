@@ -1,4 +1,4 @@
-use super::{Bucket, Core, OffsetIndex, equivalent, get_hash};
+use super::{Bucket, Core, OffsetIndex, equal, get_hash};
 use crate::HashValue;
 use crate::map::{Entry, IndexedEntry};
 use core::cmp::Ordering;
@@ -11,7 +11,7 @@ impl<'a, K, V> Entry<'a, K, V> {
     {
         let entries = &map.entries;
         let offset = map.offset;
-        let eq = equivalent(&key, entries, offset);
+        let eq = equal(&key, entries, offset);
         match map.indices.find_entry(hash.get(), eq) {
             Ok(entry) => Entry::Occupied(OccupiedEntry {
                 bucket: entry.bucket_index(),

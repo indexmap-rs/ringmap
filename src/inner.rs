@@ -62,6 +62,15 @@ fn get_hash<K, V>(
 }
 
 #[inline]
+fn equal<'a, K: Eq, V>(
+    key: &'a K,
+    entries: &'a Entries<K, V>,
+    offset: usize,
+) -> impl Fn(&OffsetIndex) -> bool + use<'a, K, V> {
+    move |&i| K::eq(key, &entries[i.get(offset)].key)
+}
+
+#[inline]
 fn equivalent<'a, K, V, Q: ?Sized + Equivalent<K>>(
     key: &'a Q,
     entries: &'a Entries<K, V>,
@@ -422,7 +431,7 @@ impl<K, V> Core<K, V> {
     where
         K: Eq,
     {
-        let eq = equivalent(&key, &self.entries, self.offset);
+        let eq = equal(&key, &self.entries, self.offset);
         let hasher = get_hash(&self.entries, self.offset);
         match self.indices.entry(hash.get(), eq, hasher) {
             hash_table::Entry::Occupied(entry) => {
@@ -444,7 +453,7 @@ impl<K, V> Core<K, V> {
     where
         K: Eq,
     {
-        let eq = equivalent(&key, &self.entries, self.offset);
+        let eq = equal(&key, &self.entries, self.offset);
         let hasher = get_hash(&self.entries, self.offset);
         match self.indices.entry(hash.get(), eq, hasher) {
             hash_table::Entry::Occupied(entry) => {
@@ -472,7 +481,7 @@ impl<K, V> Core<K, V> {
     where
         K: Eq,
     {
-        let eq = equivalent(&key, &self.entries, self.offset);
+        let eq = equal(&key, &self.entries, self.offset);
         let hasher = get_hash(&self.entries, self.offset);
         match self.indices.entry(hash.get(), eq, hasher) {
             hash_table::Entry::Occupied(entry) => {
