@@ -239,7 +239,7 @@ impl<K, V> Slice<K, V> {
         Values::from_slice(&self.entries)
     }
 
-    /// Return an iterator over mutable references to the the values of the map slice.
+    /// Return an iterator over mutable references to the values of the map slice.
     pub fn values_mut(&mut self) -> ValuesMut<'_, K, V> {
         ValuesMut::from_mut_slice(&mut self.entries)
     }
