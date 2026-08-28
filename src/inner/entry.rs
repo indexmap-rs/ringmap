@@ -1,6 +1,7 @@
 use super::{Bucket, Core, OffsetIndex, equal, get_hash};
 use crate::HashValue;
 use crate::map::{Entry, IndexedEntry};
+use crate::util::assert_index_lt;
 use core::cmp::Ordering;
 use core::mem;
 
@@ -201,7 +202,7 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     #[track_caller]
     pub fn move_index(self, to: usize) {
         if self.index != to {
-            let _ = self.map.entries[to]; // explicit bounds check
+            assert_index_lt(to, self.map.len());
 
             let orig_offset = self.map.offset;
             self.map.move_index_inner(self.index, to);

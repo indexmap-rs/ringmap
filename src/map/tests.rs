@@ -1133,7 +1133,7 @@ fn test_partition_point() {
 macro_rules! move_index_oob {
     ($test:ident, $from:expr, $to:expr) => {
         #[test]
-        #[should_panic(expected = "Out of bounds")]
+        #[should_panic(expected = "index out of bounds")]
         fn $test() {
             let mut map: RingMap<i32, ()> = (0..10).map(|k| (k, ())).collect();
             map.move_index($from, $to);
