@@ -229,6 +229,13 @@ impl<T, S> RingSet<T, S> {
         self.map.truncate(len);
     }
 
+    /// Shortens the set, keeping the last `len` elements and dropping the rest.
+    ///
+    /// If `len` is greater than the set's current length, this has no effect.
+    pub fn retain_back(&mut self, len: usize) {
+        self.map.retain_back(len);
+    }
+
     /// Clears the `RingSet` in the given index range, returning those values
     /// as a drain iterator.
     ///
