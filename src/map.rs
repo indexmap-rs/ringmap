@@ -289,6 +289,13 @@ impl<K, V, S> RingMap<K, V, S> {
         self.core.truncate(len);
     }
 
+    /// Shortens the map, keeping the last `len` elements and dropping the rest.
+    ///
+    /// If `len` is greater than the map's current length, this has no effect.
+    pub fn retain_back(&mut self, len: usize) {
+        self.core.retain_back(len);
+    }
+
     /// Clears the `RingMap` in the given index range, returning those
     /// key-value pairs as a drain iterator.
     ///
