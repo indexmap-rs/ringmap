@@ -385,6 +385,7 @@ mod tests {
         assert!(tail.is_empty());
 
         // RangeFull
+        #[expect(clippy::redundant_slicing)]
         check(&vec[..], &slice[..]);
 
         for i in 0usize..10 {
