@@ -1036,13 +1036,14 @@ impl<K, V> Core<K, V> {
     #[inline]
     #[track_caller]
     pub(crate) fn swap_indices(&mut self, a: usize, b: usize) {
-        // If they're equal and in-bounds, there's nothing to do.
-        if a == b && a < self.entries.len() {
+        assert_index_lt(a, self.len());
+        if a == b {
+            // If they're equal, there's nothing to do.
             return;
         }
+        assert_index_lt(b, self.len());
 
-        // We'll get a "nice" bounds-check from indexing `entries`,
-        // and then we expect to find it in the table as well.
+        // Since the indices are in-bounds, we expect to find them in the table as well.
         let oa = OffsetIndex::new(a, self.offset);
         let ob = OffsetIndex::new(b, self.offset);
         match self.indices.get_disjoint_mut(
