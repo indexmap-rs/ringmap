@@ -1,6 +1,7 @@
-use super::{Bucket, Core, OffsetIndex, equivalent, get_hash};
+use super::{Bucket, Core, OffsetIndex, equal, get_hash};
 use crate::HashValue;
 use crate::map::{Entry, IndexedEntry};
+use crate::util::assert_index_lt;
 use core::cmp::Ordering;
 use core::mem;
 
@@ -11,7 +12,7 @@ impl<'a, K, V> Entry<'a, K, V> {
     {
         let entries = &map.entries;
         let offset = map.offset;
-        let eq = equivalent(&key, entries, offset);
+        let eq = equal(&key, entries, offset);
         match map.indices.find_entry(hash.get(), eq) {
             Ok(entry) => Entry::Occupied(OccupiedEntry {
                 bucket: entry.bucket_index(),
@@ -201,7 +202,7 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     #[track_caller]
     pub fn move_index(self, to: usize) {
         if self.index != to {
-            let _ = self.map.entries[to]; // explicit bounds check
+            assert_index_lt(to, self.map.len());
 
             let orig_offset = self.map.offset;
             self.map.move_index_inner(self.index, to);
@@ -223,6 +224,8 @@ impl<'a, K, V> OccupiedEntry<'a, K, V> {
     #[track_caller]
     pub fn swap_indices(self, other: usize) {
         if self.index != other {
+            assert_index_lt(other, self.map.len());
+
             // Since we already know where our bucket is, we only need to find the other.
             let hash = self.map.entries[other].hash;
             let oi = OffsetIndex::new(other, self.map.offset);
@@ -417,6 +420,7 @@ impl<'a, K, V> VacantEntry<'a, K, V> {
     pub fn replace_index(self, index: usize) -> (K, OccupiedEntry<'a, K, V>) {
         // self.map.replace_index_unique(index, self.hash, self.key)
         let Self { map, hash, key } = self;
+        assert_index_lt(index, map.len());
 
         // NB: This removal and insertion isn't "no grow" (with unreachable hasher)
         // because hashbrown's tombstones might force a resize anyway.

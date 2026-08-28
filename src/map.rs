@@ -1,6 +1,7 @@
 //! [`RingMap`] is a hash table where the iteration order of the key-value
 //! pairs is independent of the hash values of the keys.
 
+mod disjoint;
 mod entry;
 mod iter;
 mod mutable;
@@ -45,7 +46,7 @@ use core::ops::{Index, IndexMut, Range, RangeBounds};
 use std::hash::RandomState;
 
 use crate::inner::Core;
-use crate::util::{simplify_range, third, try_simplify_range};
+use crate::util::{assert_index_le, assert_index_lt, simplify_range, third, try_simplify_range};
 use crate::{Bucket, Equivalent, GetDisjointMutError, HashValue, TryReserveError};
 
 /// A hash table where the iteration order of the key-value pairs is independent
@@ -618,12 +619,7 @@ where
     /// ```
     #[track_caller]
     pub fn insert_before(&mut self, mut index: usize, key: K, value: V) -> (usize, Option<V>) {
-        let len = self.len();
-
-        assert!(
-            index <= len,
-            "index out of bounds: the len is {len} but the index is {index}. Expected index <= len"
-        );
+        assert_index_le(index, self.len());
 
         match self.entry(key) {
             Entry::Occupied(mut entry) => {
@@ -706,21 +702,13 @@ where
         let len = self.len();
         match self.entry(key) {
             Entry::Occupied(mut entry) => {
-                assert!(
-                    index < len,
-                    "index out of bounds: the len is {len} but the index is {index}"
-                );
-
+                assert_index_lt(index, len);
                 let old = mem::replace(entry.get_mut(), value);
                 entry.move_index(index);
                 Some(old)
             }
             Entry::Vacant(entry) => {
-                assert!(
-                    index <= len,
-                    "index out of bounds: the len is {len} but the index is {index}. Expected index <= len"
-                );
-
+                assert_index_le(index, len);
                 entry.shift_insert(index, value);
                 None
             }
@@ -744,6 +732,8 @@ where
     /// Computes in **O(1)** time (average).
     #[track_caller]
     pub fn replace_index(&mut self, index: usize, key: K) -> Result<K, (usize, K)> {
+        assert_index_lt(index, self.len());
+
         // If there's a direct match, we don't even need to hash it.
         let entry = &mut self.as_entries_mut()[index];
         if key == entry.key {
@@ -976,7 +966,10 @@ where
     ///
     /// ```
     /// let mut map = ringmap::RingMap::from([(1, 'a'), (3, 'b'), (2, 'c')]);
-    /// assert_eq!(map.get_disjoint_mut([&2, &1]), [Some(&mut 'c'), Some(&mut 'a')]);
+    /// assert_eq!(
+    ///   map.get_disjoint_mut([&2, &1, &0]),
+    ///   [Some(&mut 'c'), Some(&mut 'a'), None],
+    /// );
     /// ```
     #[track_caller]
     pub fn get_disjoint_mut<Q, const N: usize>(&mut self, keys: [&Q; N]) -> [Option<&mut V>; N]
@@ -984,18 +977,8 @@ where
         Q: ?Sized + Hash + Equivalent<K>,
     {
         let indices = keys.map(|key| self.get_index_of(key));
-        let (head, tail) = self.as_mut_slices();
-        match Slice::get_disjoint_opt_mut(head, tail, indices) {
-            Err(GetDisjointMutError::IndexOutOfBounds) => {
-                unreachable!(
-                    "Internal error: indices should never be OOB as we got them from get_index_of"
-                );
-            }
-            Err(GetDisjointMutError::OverlappingIndices) => {
-                panic!("duplicate keys found");
-            }
-            Ok(key_values) => key_values.map(|kv_opt| kv_opt.map(|kv| kv.1)),
-        }
+        let (head, tail) = self.as_entries_mut().as_mut_slices();
+        disjoint::get_disjoint_opt_mut(head, tail, indices).map(|opt| opt.map(Bucket::value_mut))
     }
 
     /// Remove the key-value pair equivalent to `key` and return its value.
@@ -1588,10 +1571,9 @@ impl<K, V, S> RingMap<K, V, S> {
         &mut self,
         indices: [usize; N],
     ) -> Result<[(&K, &mut V); N], GetDisjointMutError> {
-        let indices = indices.map(Some);
-        let (head, tail) = self.as_mut_slices();
-        let key_values = Slice::get_disjoint_opt_mut(head, tail, indices)?;
-        Ok(key_values.map(Option::unwrap))
+        let (head, tail) = self.as_entries_mut().as_mut_slices();
+        let key_values = disjoint::get_disjoint_mut(head, tail, indices)?;
+        Ok(key_values.map(Bucket::ref_mut))
     }
 
     #[track_caller]
@@ -1652,6 +1634,7 @@ impl<K, V, S> RingMap<K, V, S> {
     /// Returns head and tail slices of key-value pairs in the given range of indices.
     ///
     /// Valid indices are `0 <= index < self.len()`.
+    #[expect(clippy::type_complexity)]
     pub fn get_range<R>(&self, range: R) -> Option<(&Slice<K, V>, &Slice<K, V>)>
     where
         R: RangeBounds<usize>,
@@ -1667,6 +1650,7 @@ impl<K, V, S> RingMap<K, V, S> {
     /// Returns mutable head and tail slices of key-value pairs in the given range of indices.
     ///
     /// Valid indices are `0 <= index < self.len()`.
+    #[expect(clippy::type_complexity)]
     pub fn get_range_mut<R>(&mut self, range: R) -> Option<(&mut Slice<K, V>, &mut Slice<K, V>)>
     where
         R: RangeBounds<usize>,
@@ -1911,14 +1895,8 @@ impl<K, V, S> Index<usize> for RingMap<K, V, S> {
     ///
     /// ***Panics*** if `index` is out of bounds.
     fn index(&self, index: usize) -> &V {
-        if let Some((_, value)) = self.get_index(index) {
-            value
-        } else {
-            panic!(
-                "index out of bounds: the len is {len} but the index is {index}",
-                len = self.len()
-            );
-        }
+        assert_index_lt(index, self.len());
+        &self.as_entries()[index].value
     }
 }
 
@@ -1956,13 +1934,8 @@ impl<K, V, S> IndexMut<usize> for RingMap<K, V, S> {
     ///
     /// ***Panics*** if `index` is out of bounds.
     fn index_mut(&mut self, index: usize) -> &mut V {
-        let len: usize = self.len();
-
-        if let Some((_, value)) = self.get_index_mut(index) {
-            value
-        } else {
-            panic!("index out of bounds: the len is {len} but the index is {index}");
-        }
+        assert_index_lt(index, self.len());
+        &mut self.as_entries_mut()[index].value
     }
 }
 

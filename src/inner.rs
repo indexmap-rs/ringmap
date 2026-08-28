@@ -17,7 +17,7 @@ use core::cmp::Ordering;
 use core::ops::RangeBounds;
 use core::{iter, mem, slice};
 
-use crate::util::simplify_range;
+use crate::util::{assert_index_le, assert_index_lt, simplify_range};
 use crate::{Bucket, Equivalent, HashValue, TryReserveError};
 
 type Indices = hash_table::HashTable<OffsetIndex>;
@@ -59,6 +59,15 @@ fn get_hash<K, V>(
     offset: usize,
 ) -> impl Fn(&OffsetIndex) -> u64 + use<'_, K, V> {
     move |&i| entries[i.get(offset)].hash.get()
+}
+
+#[inline]
+fn equal<'a, K: Eq, V>(
+    key: &'a K,
+    entries: &'a Entries<K, V>,
+    offset: usize,
+) -> impl Fn(&OffsetIndex) -> bool + use<'a, K, V> {
+    move |&i| K::eq(key, &entries[i.get(offset)].key)
 }
 
 #[inline]
@@ -264,11 +273,7 @@ impl<K, V> Core<K, V> {
 
     #[track_caller]
     pub(crate) fn split_off(&mut self, at: usize) -> Self {
-        let len = self.entries.len();
-        assert!(
-            at <= len,
-            "index out of bounds: the len is {len} but the index is {at}. Expected index <= len"
-        );
+        assert_index_le(at, self.len());
 
         self.erase_indices(at, self.entries.len());
         let entries = self.entries.split_off(at);
@@ -422,7 +427,7 @@ impl<K, V> Core<K, V> {
     where
         K: Eq,
     {
-        let eq = equivalent(&key, &self.entries, self.offset);
+        let eq = equal(&key, &self.entries, self.offset);
         let hasher = get_hash(&self.entries, self.offset);
         match self.indices.entry(hash.get(), eq, hasher) {
             hash_table::Entry::Occupied(entry) => {
@@ -444,7 +449,7 @@ impl<K, V> Core<K, V> {
     where
         K: Eq,
     {
-        let eq = equivalent(&key, &self.entries, self.offset);
+        let eq = equal(&key, &self.entries, self.offset);
         let hasher = get_hash(&self.entries, self.offset);
         match self.indices.entry(hash.get(), eq, hasher) {
             hash_table::Entry::Occupied(entry) => {
@@ -472,7 +477,7 @@ impl<K, V> Core<K, V> {
     where
         K: Eq,
     {
-        let eq = equivalent(&key, &self.entries, self.offset);
+        let eq = equal(&key, &self.entries, self.offset);
         let hasher = get_hash(&self.entries, self.offset);
         match self.indices.entry(hash.get(), eq, hasher) {
             hash_table::Entry::Occupied(entry) => {
@@ -964,9 +969,10 @@ impl<K, V> Core<K, V> {
     #[inline]
     #[track_caller]
     pub(super) fn move_index(&mut self, from: usize, to: usize) {
+        assert_index_lt(from, self.len());
         let from_hash = self.entries[from].hash;
         if from != to {
-            let _ = self.entries[to]; // explicit bounds check
+            assert_index_lt(to, self.len());
 
             // Find the bucket index first so we won't lose it among other updated indices.
             let from_index = OffsetIndex::new(from, self.offset);
@@ -1030,13 +1036,14 @@ impl<K, V> Core<K, V> {
     #[inline]
     #[track_caller]
     pub(crate) fn swap_indices(&mut self, a: usize, b: usize) {
-        // If they're equal and in-bounds, there's nothing to do.
-        if a == b && a < self.entries.len() {
+        assert_index_lt(a, self.len());
+        if a == b {
+            // If they're equal, there's nothing to do.
             return;
         }
+        assert_index_lt(b, self.len());
 
-        // We'll get a "nice" bounds-check from indexing `entries`,
-        // and then we expect to find it in the table as well.
+        // Since the indices are in-bounds, we expect to find them in the table as well.
         let oa = OffsetIndex::new(a, self.offset);
         let ob = OffsetIndex::new(b, self.offset);
         match self.indices.get_disjoint_mut(

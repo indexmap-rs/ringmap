@@ -45,8 +45,8 @@ fn insert() {
 
 #[test]
 fn push_back() {
-    let insert = vec![9, 2, 7, 1, 4, 6, 13];
-    let present = vec![1, 6, 2];
+    let insert = [9, 2, 7, 1, 4, 6, 13];
+    let present = [1, 6, 2];
     let mut map = RingMap::with_capacity(insert.len());
 
     for (i, &elt) in insert.iter().enumerate() {
@@ -69,8 +69,8 @@ fn push_back() {
 
 #[test]
 fn push_front() {
-    let insert = vec![9, 2, 7, 1, 4, 6, 13];
-    let present = vec![1, 6, 2];
+    let insert = [9, 2, 7, 1, 4, 6, 13];
+    let present = [1, 6, 2];
     let mut map = RingMap::with_capacity(insert.len());
 
     for (i, &elt) in insert.iter().enumerate() {
@@ -234,10 +234,10 @@ fn reserve() {
         assert_eq!(map.capacity(), capacity);
         assert_eq!(map.get(&i), Some(&(i * i)));
     }
-    map.insert(capacity, std::usize::MAX);
+    map.insert(capacity, usize::MAX);
     assert_eq!(map.len(), capacity + 1);
     assert!(map.capacity() > capacity);
-    assert_eq!(map.get(&capacity), Some(&std::usize::MAX));
+    assert_eq!(map.get(&capacity), Some(&usize::MAX));
 }
 
 #[test]
@@ -257,7 +257,7 @@ fn shrink_to_fit() {
         assert_eq!(map.len(), i);
         map.insert(i, i * i);
         assert_eq!(map.len(), i + 1);
-        assert!(map.capacity() >= i + 1);
+        assert!(map.capacity() > i);
         assert_eq!(map.get(&i), Some(&(i * i)));
         map.shrink_to_fit();
         assert_eq!(map.len(), i + 1);
@@ -447,11 +447,11 @@ fn partial_eq_and_eq() {
 #[test]
 fn extend() {
     let mut map = RingMap::new();
-    map.extend(vec![(&1, &2), (&3, &4)]);
-    map.extend(vec![(5, 6)]);
+    map.extend([(&1, &2), (&3, &4)]);
+    map.extend([(5, 6)]);
     assert_eq!(
         map.into_iter().collect::<Vec<_>>(),
-        vec![(1, 2), (3, 4), (5, 6)]
+        [(1, 2), (3, 4), (5, 6)]
     );
 }
 
@@ -503,16 +503,11 @@ fn entry_and_modify() {
 fn entry_or_default() {
     let mut map = RingMap::new();
 
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, Default, PartialEq)]
     enum TestEnum {
+        #[default]
         DefaultValue,
         NonDefaultValue,
-    }
-
-    impl Default for TestEnum {
-        fn default() -> Self {
-            TestEnum::DefaultValue
-        }
     }
 
     map.insert(1, TestEnum::NonDefaultValue);
@@ -628,8 +623,7 @@ fn from_entries() {
 
 #[test]
 fn keys() {
-    let vec = vec![(1, 'a'), (2, 'b'), (3, 'c')];
-    let map: RingMap<_, _> = vec.into_iter().collect();
+    let map = RingMap::<_, _>::from_iter([(1, 'a'), (2, 'b'), (3, 'c')]);
     let keys: Vec<_> = map.keys().copied().collect();
     assert_eq!(keys.len(), 3);
     assert!(keys.contains(&1));
@@ -639,8 +633,7 @@ fn keys() {
 
 #[test]
 fn into_keys() {
-    let vec = vec![(1, 'a'), (2, 'b'), (3, 'c')];
-    let map: RingMap<_, _> = vec.into_iter().collect();
+    let map = RingMap::<_, _>::from_iter([(1, 'a'), (2, 'b'), (3, 'c')]);
     let keys: Vec<i32> = map.into_keys().collect();
     assert_eq!(keys.len(), 3);
     assert!(keys.contains(&1));
@@ -650,8 +643,7 @@ fn into_keys() {
 
 #[test]
 fn values() {
-    let vec = vec![(1, 'a'), (2, 'b'), (3, 'c')];
-    let map: RingMap<_, _> = vec.into_iter().collect();
+    let map = RingMap::<_, _>::from_iter([(1, 'a'), (2, 'b'), (3, 'c')]);
     let values: Vec<_> = map.values().copied().collect();
     assert_eq!(values.len(), 3);
     assert!(values.contains(&'a'));
@@ -661,8 +653,7 @@ fn values() {
 
 #[test]
 fn values_mut() {
-    let vec = vec![(1, 1), (2, 2), (3, 3)];
-    let mut map: RingMap<_, _> = vec.into_iter().collect();
+    let mut map = RingMap::<_, _>::from_iter([(1, 1), (2, 2), (3, 3)]);
     for value in map.values_mut() {
         *value *= 2
     }
@@ -675,8 +666,7 @@ fn values_mut() {
 
 #[test]
 fn into_values() {
-    let vec = vec![(1, 'a'), (2, 'b'), (3, 'c')];
-    let map: RingMap<_, _> = vec.into_iter().collect();
+    let map = RingMap::<_, _>::from_iter([(1, 'a'), (2, 'b'), (3, 'c')]);
     let values: Vec<char> = map.into_values().collect();
     assert_eq!(values.len(), 3);
     assert!(values.contains(&'a'));
@@ -841,8 +831,7 @@ fn shift_remove_full() {
 
 #[test]
 fn sorted_unstable_by() {
-    let mut map: RingMap<i32, i32> = RingMap::new();
-    map.extend(vec![(1, 10), (2, 20), (3, 30), (4, 40), (5, 50)]);
+    let map = RingMap::<i32, i32>::from_iter([(1, 10), (2, 20), (3, 30), (4, 40), (5, 50)]);
     let sorted: Vec<_> = map.sorted_unstable_by(|_a, b, _c, d| d.cmp(&b)).collect();
 
     assert_eq!(
@@ -893,8 +882,8 @@ fn insert_before_oob() {
 
 #[test]
 fn clear() {
-    let mut map: RingMap<i32, i32> = RingMap::new();
-    map.extend(vec![(1, 10), (2, 20), (3, 30), (4, 40), (5, 50)]);
+    let mut map = RingMap::<i32, i32>::from_iter([(1, 10), (2, 20), (3, 30), (4, 40), (5, 50)]);
+    assert_ne!(map.len(), 0);
     map.clear();
     assert_eq!(map.len(), 0);
 }
@@ -1133,7 +1122,7 @@ fn test_partition_point() {
 macro_rules! move_index_oob {
     ($test:ident, $from:expr, $to:expr) => {
         #[test]
-        #[should_panic(expected = "Out of bounds")]
+        #[should_panic(expected = "index out of bounds")]
         fn $test() {
             let mut map: RingMap<i32, ()> = (0..10).map(|k| (k, ())).collect();
             map.move_index($from, $to);
