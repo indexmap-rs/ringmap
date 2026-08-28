@@ -1634,6 +1634,7 @@ impl<K, V, S> RingMap<K, V, S> {
     /// Returns head and tail slices of key-value pairs in the given range of indices.
     ///
     /// Valid indices are `0 <= index < self.len()`.
+    #[expect(clippy::type_complexity)]
     pub fn get_range<R>(&self, range: R) -> Option<(&Slice<K, V>, &Slice<K, V>)>
     where
         R: RangeBounds<usize>,
@@ -1649,6 +1650,7 @@ impl<K, V, S> RingMap<K, V, S> {
     /// Returns mutable head and tail slices of key-value pairs in the given range of indices.
     ///
     /// Valid indices are `0 <= index < self.len()`.
+    #[expect(clippy::type_complexity)]
     pub fn get_range_mut<R>(&mut self, range: R) -> Option<(&mut Slice<K, V>, &mut Slice<K, V>)>
     where
         R: RangeBounds<usize>,
