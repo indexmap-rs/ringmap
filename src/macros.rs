@@ -19,11 +19,40 @@
 /// // "a" is the first key
 /// assert_eq!(map.keys().next(), Some(&"a"));
 /// ```
+///
+/// This can also be initialized in `const` contexts:
+///
+/// ```
+/// use ringmap::{RingMap, ringmap_with_default};
+/// use fnv::FnvBuildHasher; // = BuildHasherDefault<FnvHasher>
+/// use std::sync::Mutex;
+///
+/// static GLOBAL: Mutex<RingMap<String, i32, FnvBuildHasher>> =
+///     Mutex::new(ringmap_with_default!());
+///
+/// if let Ok(mut map) = GLOBAL.lock() {
+///     map.insert("a".into(), 1);
+///     map.insert("b".into(), 2);
+/// }
+///
+/// assert_eq!(GLOBAL.lock().unwrap()["a"], 1);
+/// assert_eq!(GLOBAL.lock().unwrap()["b"], 2);
+/// ```
 #[macro_export]
 macro_rules! ringmap_with_default {
-    ($H:ty; $($key:expr => $value:expr,)+) => { $crate::ringmap_with_default!($H; $($key => $value),+) };
-    ($H:ty; $($key:expr => $value:expr),*) => {{
-        #[allow(unused_mut)]
+    () => { const {
+        $crate::RingMap::with_hasher(
+            // Let type inference figure out the hasher:
+            ::core::hash::BuildHasherDefault::new(),
+        )
+    }};
+    ($H:ty $(;)?) => { const {
+        $crate::RingMap::with_hasher(
+            // Specify your custom `H` (must implement Default + Hasher) as the hasher:
+            ::core::hash::BuildHasherDefault::<$H>::new(),
+        )
+    }};
+    ($H:ty; $($key:expr => $value:expr),+ $(,)?) => {{
         let mut map = $crate::RingMap::with_capacity_and_hasher(
             // Note: `stringify!($key)` is just here to consume the repetition,
             // but we throw away that string literal during constant evaluation.
@@ -33,7 +62,7 @@ macro_rules! ringmap_with_default {
         );
         $(
             map.insert($key, $value);
-        )*
+        )+
         map
     }};
 }
@@ -60,8 +89,8 @@ macro_rules! ringmap_with_default {
 /// assert_eq!(map.keys().next(), Some(&"a"));
 /// ```
 macro_rules! ringmap {
-    ($($key:expr => $value:expr,)+) => { $crate::ringmap!($($key => $value),+) };
-    ($($key:expr => $value:expr),*) => {{
+    () => { $crate::RingMap::new() };
+    ($($key:expr => $value:expr),+ $(,)?) => {{
         let mut map = $crate::RingMap::with_capacity(
             // Note: `stringify!($key)` is just here to consume the repetition,
             // but we throw away that string literal during constant evaluation.
@@ -69,7 +98,7 @@ macro_rules! ringmap {
         );
         $(
             map.insert($key, $value);
-        )*
+        )+
         map
     }};
 }
@@ -95,21 +124,52 @@ macro_rules! ringmap {
 /// // "a" is the first value
 /// assert_eq!(set.iter().next(), Some(&"a"));
 /// ```
+///
+/// This can also be initialized in `const` contexts:
+///
+/// ```
+/// use ringmap::{RingSet, ringset_with_default};
+/// use fnv::FnvBuildHasher; // = BuildHasherDefault<FnvHasher>
+/// use std::sync::Mutex;
+///
+/// static INTERN: Mutex<RingSet<String, FnvBuildHasher>> =
+///     Mutex::new(ringset_with_default!());
+///
+/// if let Ok(mut set) = INTERN.lock() {
+///     set.insert("a".into());
+///     set.insert("b".into());
+///     set.insert("c".into());
+/// }
+///
+/// assert!(INTERN.lock().unwrap().contains("a"));
+/// assert!(INTERN.lock().unwrap().contains("b"));
+/// assert!(INTERN.lock().unwrap().contains("c"));
+/// ```
 #[macro_export]
 macro_rules! ringset_with_default {
-    ($H:ty; $($value:expr,)+) => { $crate::ringset_with_default!($H; $($value),+) };
-    ($H:ty; $($value:expr),*) => {{
-        #[allow(unused_mut)]
+    () => { const {
+        $crate::RingSet::with_hasher(
+            // Let type inference figure out the hasher:
+            ::core::hash::BuildHasherDefault::new(),
+        )
+    }};
+    ($H:ty $(;)?) => { const {
+        $crate::RingSet::with_hasher(
+            // Specify your custom `H` (must implement Default + Hasher) as the hasher:
+            ::core::hash::BuildHasherDefault::<$H>::new(),
+        )
+    }};
+    ($H:ty; $($value:expr),+ $(,)?) => {{
         let mut set = $crate::RingSet::with_capacity_and_hasher(
             // Note: `stringify!($value)` is just here to consume the repetition,
             // but we throw away that string literal during constant evaluation.
             const { <[()]>::len(&[$({ stringify!($value); }),*]) },
-            // Specify your custom `H` (must implement Default + Hash) as the hasher:
+            // Specify your custom `H` (must implement Default + Hasher) as the hasher:
             ::core::hash::BuildHasherDefault::<$H>::new(),
         );
         $(
             set.insert($value);
-        )*
+        )+
         set
     }};
 }
@@ -136,8 +196,8 @@ macro_rules! ringset_with_default {
 /// assert_eq!(set.iter().next(), Some(&"a"));
 /// ```
 macro_rules! ringset {
-    ($($value:expr,)+) => { $crate::ringset!($($value),+) };
-    ($($value:expr),*) => {{
+    () => { $crate::RingSet::new() };
+    ($($value:expr),+ $(,)?) => {{
         let mut set = $crate::RingSet::with_capacity(
             // Note: `stringify!($value)` is just here to consume the repetition,
             // but we throw away that string literal during constant evaluation.
@@ -145,7 +205,7 @@ macro_rules! ringset {
         );
         $(
             set.insert($value);
-        )*
+        )+
         set
     }};
 }
