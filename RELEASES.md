@@ -1,5 +1,9 @@
 # Releases
 
+## 0.2.8 (2026-10-06)
+
+- Added `retain_back` methods to `RingMap` and `RingSet`.
+
 ## 0.2.7 (2026-09-04)
 
 - Fix item hygiene in map and set macros. Previously, an internal `const CAP`

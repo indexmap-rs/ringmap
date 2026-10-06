@@ -245,6 +245,15 @@ impl<K, V> Core<K, V> {
         }
     }
 
+    pub(crate) fn retain_back(&mut self, len: usize) {
+        if len < self.len() {
+            let start = self.entries.len() - len;
+            self.erase_indices(0, start);
+            // TODO(MSRV 1.99): use `VecDeque::retain_back`
+            self.entries.drain(..start);
+        }
+    }
+
     #[track_caller]
     pub(crate) fn drain<R>(&mut self, range: R) -> vec_deque::Drain<'_, Bucket<K, V>>
     where
