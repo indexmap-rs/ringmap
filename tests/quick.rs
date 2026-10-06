@@ -626,10 +626,10 @@ where
 use crate::Op::*;
 #[derive(Copy, Clone, Debug)]
 enum Op<K, V> {
-    Add(K, V),
+    Add((K, V)),
     Remove(K),
-    PushBackEntry(K, V),
-    PushFrontEntry(K, V),
+    PushBackEntry((K, V)),
+    PushFrontEntry((K, V)),
     RemoveEntry(K),
 }
 
@@ -639,12 +639,23 @@ where
     V: Arbitrary,
 {
     fn arbitrary(g: &mut Gen) -> Self {
-        match u32::arbitrary(g) % 4 {
-            0 => Add(K::arbitrary(g), V::arbitrary(g)),
-            1 => PushBackEntry(K::arbitrary(g), V::arbitrary(g)),
-            2 => PushFrontEntry(K::arbitrary(g), V::arbitrary(g)),
-            3 => Remove(K::arbitrary(g)),
-            _ => RemoveEntry(K::arbitrary(g)),
+        let variants: &[fn(&mut Gen) -> Self] = &[
+            |g| Add(<(K, V)>::arbitrary(g)),
+            |g| PushBackEntry(<(K, V)>::arbitrary(g)),
+            |g| PushFrontEntry(<(K, V)>::arbitrary(g)),
+            |g| Remove(K::arbitrary(g)),
+            |g| RemoveEntry(K::arbitrary(g)),
+        ];
+        g.choose(variants).unwrap()(g)
+    }
+
+    fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+        match self {
+            Add(kv) => Box::new(kv.shrink().map(Add)),
+            Remove(k) => Box::new(k.shrink().map(Remove)),
+            PushBackEntry(kv) => Box::new(kv.shrink().map(PushBackEntry)),
+            PushFrontEntry(kv) => Box::new(kv.shrink().map(PushFrontEntry)),
+            RemoveEntry(k) => Box::new(k.shrink().map(RemoveEntry)),
         }
     }
 }
@@ -656,24 +667,24 @@ where
     S: BuildHasher,
 {
     for op in ops {
-        match *op {
-            Add(ref k, ref v) => {
+        match op {
+            Add((k, v)) => {
                 a.insert(k.clone(), v.clone());
                 b.insert(k.clone(), v.clone());
             }
-            PushBackEntry(ref k, ref v) => {
+            PushBackEntry((k, v)) => {
                 a.entry(k.clone()).or_push_back_with(|| v.clone());
                 b.entry(k.clone()).or_insert_with(|| v.clone());
             }
-            PushFrontEntry(ref k, ref v) => {
+            PushFrontEntry((k, v)) => {
                 a.entry(k.clone()).or_push_front_with(|| v.clone());
                 b.entry(k.clone()).or_insert_with(|| v.clone());
             }
-            Remove(ref k) => {
+            Remove(k) => {
                 a.swap_remove_back(k);
                 b.remove(k);
             }
-            RemoveEntry(ref k) => {
+            RemoveEntry(k) => {
                 if let Entry::Occupied(ent) = a.entry(k.clone()) {
                     ent.swap_remove_back_entry();
                 }
