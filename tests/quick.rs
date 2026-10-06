@@ -639,13 +639,14 @@ where
     V: Arbitrary,
 {
     fn arbitrary(g: &mut Gen) -> Self {
-        match u32::arbitrary(g) % 4 {
-            0 => Add(K::arbitrary(g), V::arbitrary(g)),
-            1 => PushBackEntry(K::arbitrary(g), V::arbitrary(g)),
-            2 => PushFrontEntry(K::arbitrary(g), V::arbitrary(g)),
-            3 => Remove(K::arbitrary(g)),
-            _ => RemoveEntry(K::arbitrary(g)),
-        }
+        let variants: &[fn(&mut Gen) -> Self] = &[
+            |g| Add(K::arbitrary(g), V::arbitrary(g)),
+            |g| PushBackEntry(K::arbitrary(g), V::arbitrary(g)),
+            |g| PushFrontEntry(K::arbitrary(g), V::arbitrary(g)),
+            |g| Remove(K::arbitrary(g)),
+            |g| RemoveEntry(K::arbitrary(g)),
+        ];
+        g.choose(variants).unwrap()(g)
     }
 }
 
